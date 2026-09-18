@@ -60,7 +60,7 @@ export function mountReplay(core: Core): ScreenHandle {
     ? h(
         'div',
         { class: 'replay-info' },
-        h('strong', {}, resultLabel(rec.summary.result)),
+        h('strong', {}, resultLabel(rec.summary.result, rec.summary.mode)),
         h('span', {}, ` · ${rec.summary.speedKmh.toFixed(0)} km/h · ${rec.summary.spinRps.toFixed(1)} rev/s`),
       )
     : h('div', { class: 'replay-info' }, 'No kick recorded yet.');
@@ -76,7 +76,8 @@ export function mountReplay(core: Core): ScreenHandle {
   if (scene && rec) {
     scene.setCamera('replay');
     scene.setAimPreview(null);
-    scene.setTrail(rec.summary.path, core.log.get(rec.spotKey)?.best?.path ?? null);
+    // Ghost = best kick from before this shot was recorded (never the replayed shot itself).
+    scene.setTrail(rec.summary.path, core.ui.resultGhost);
   }
 
   return {

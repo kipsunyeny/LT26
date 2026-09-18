@@ -63,6 +63,12 @@ const BOUNCE_EVENT_VY = 1;
 /** Same-tag contact events closer together than this are merged, s. */
 const CONTACT_EVENT_GAP = 0.15;
 const PREDICT_HORIZON = 3;
+/** A penalty run-up still without a strike this long after the ideal contact is aborted, s. */
+export const RUN_UP_ABORT_S = 1.0;
+/** Long shot: without a strike this long after the ideal contact, the taker scuffs the ball automatically, s. */
+export const SCUFF_AFTER_S = 0.6;
+const SCUFF_POWER = 0.2;
+const SCUFF_ELEVATION = 0.08;
 
 /** A push rolls without slipping: top spin v/(2πr) rev/s (a spinless push would skid first). */
 function pushLaunch(origin: Vec3, azimuth: number, power: number): LaunchParams {
@@ -232,7 +238,7 @@ export function createSim(opts: CreateSimOptions): Sim {
     if (state.phase === 'runUp' && runUp) timingErrorMs = intent.atMs - runUp.contactAt * 1000;
     else if (state.phase === 'pushed' && push) timingErrorMs = intent.atMs - push.contactAt * 1000;
     if (!Number.isFinite(timingErrorMs)) timingErrorMs = 0;
-    const pen = timingPenalty(timingErrorMs);
+    const pen = timingPenalty(timingErrorMs, state.mode === 'longShot' ? 'longShot' : 'runUp');
     const pSig = powerScatterDeg(intent.power);
     const sigma = Math.hypot(pSig, pen.sigmaDeg);
     const g1 = gaussian(rng);
@@ -241,9 +247,13 @@ export function createSim(opts: CreateSimOptions): Sim {
     const uGuess = rng();
     const origin = copy(state.ball.p);
     const ballVel = state.phase === 'pushed' ? copy(state.ball.v) : v3(0, 0, 0);
-    const base = resolve(intent, origin, ballVel, pen.powerMult);
+    const base = resolve(intent, origin, ballVel, pen.speedMult);
     const launch = applyScatter(base, sigma, g1, g2);
     const e = env();
+    // Free-flight crossing of the real launch (same stepBall, same noise): identical to the live flight until the
+    // first contact, so it is "where the ball would have crossed" for saved/blocked shots.
+    const free = simulate(launch, e, { stopAtGoalLine: true, maxTime: 6 }).lineCrossing;
+    const predicted = free ? { x: free.p.x, y: free.p.y } : null;
 
     // Keeper plan: reaction window, penalty read of the run-up.
     let guessSide: -1 | 0 | 1 = 0;
@@ -266,7 +276,7 @@ export function createSim(opts: CreateSimOptions): Sim {
       launch,
       noise: createKnuckleNoise(e.seed),
       env: e,
-      judge: new ShotJudge(state.mode, spot.key, launch),
+      judge: new ShotJudge(state.mode, spot.key, launch, predicted),
       recorder,
       wallJumped: false,
       caught: false,
@@ -300,7 +310,7 @@ export function createSim(opts: CreateSimOptions): Sim {
     let t = 0;
     for (; t < 4; t += DT) {
       s = stepBall(s, DT, e, ZERO_NOISE, frame).state;
-      const c = chaseStep(ch, takerStand(s.p, settings), s.v, DT);
+      const c = chaseStep(ch, takerStand(s.p, settings), s.v, t + DT, DT);
       ch = c.c;
       if (c.reached) break;
     }
@@ -390,7 +400,7 @@ export function createSim(opts: CreateSimOptions): Sim {
     const r = stepBall(state.ball, DT, env(), ZERO_NOISE, liveColliders());
     state.ball = r.state;
     if (!p.reached) {
-      const c = chaseStep(p.chase, takerStand(state.ball.p, settings), state.ball.v, DT);
+      const c = chaseStep(p.chase, takerStand(state.ball.p, settings), state.ball.v, state.time - p.t, DT);
       p.chase = c.c;
       p.reached = c.reached;
     } else {
@@ -403,11 +413,39 @@ export function createSim(opts: CreateSimOptions): Sim {
     state.world = buildWorld();
   }
 
+  /** Abort a penalty run-up without a strike: taker back beside the ball, no penalty. */
+  function cancel(): void {
+    if (state.phase !== 'runUp') return;
+    runUp = null;
+    takerStride = 0;
+    takerPos = takerStand(spot.ball, settings);
+    state.world = buildWorld();
+    setPhase('aiming');
+  }
+
+  /** Long shot left too late: the taker scuffs it low towards the goal centre with the maximum timing penalty. */
+  function scuff(): void {
+    const b = state.ball.p;
+    doStrike({
+      kind: 'strike',
+      scheme: settings.controlScheme,
+      aim: { kind: 'angles', azimuth: Math.atan2(-b.x, Math.max(b.z, 0.1)), elevation: SCUFF_ELEVATION },
+      power: SCUFF_POWER,
+      sideSpin: 0,
+      topSpin: 0,
+      atMs: state.time * 1000,
+    });
+  }
+
   function stepOnce(): void {
     state.time += DT;
     switch (state.phase) {
       case 'runUp': {
         const r = runUp;
+        if (r && state.time > r.contactAt + RUN_UP_ABORT_S + 1e-9) {
+          cancel();
+          break;
+        }
         if (r) {
           takerStride = Math.min(1, Math.max(0, (state.time - r.t0) / RUN_UP_TIME));
           takerPos = runUpPosition(spot.ball, settings, takerStride);
@@ -417,6 +455,7 @@ export function createSim(opts: CreateSimOptions): Sim {
       }
       case 'pushed':
         stepPushed();
+        if (push && state.time >= push.contactAt + SCUFF_AFTER_S - 1e-9) scuff();
         break;
       case 'flight':
       case 'result':
@@ -476,13 +515,21 @@ export function createSim(opts: CreateSimOptions): Sim {
       if (state.mode === 'longShot' && push) return push.contactAt;
       return state.time;
     },
+    cancelRunUp(): void {
+      cancel();
+    },
     applyIntent(intent: KickIntent): void {
       const ph = state.phase;
       if (intent.kind === 'push') {
         if (state.mode === 'longShot' && ph === 'aiming') doPush(intent);
         return;
       }
-      if (ph === 'aiming' || ph === 'runUp' || ph === 'pushed') doStrike(intent);
+      // Free kick: a standing strike. Penalty: only from the run-up. Long shot: only after the push.
+      const allowed =
+        (state.mode === 'freeKick' && ph === 'aiming') ||
+        (state.mode === 'penalty' && ph === 'runUp') ||
+        (state.mode === 'longShot' && ph === 'pushed');
+      if (allowed) doStrike(intent);
     },
     update(dt: number): void {
       if (!(dt > 0)) return;

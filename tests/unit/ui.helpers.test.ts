@@ -37,13 +37,17 @@ describe('shot card', () => {
       miss: '0.18 m',
       timing: '−35 ms · perfect',
     });
+    const foot = shotCardRows(summary(), null, 'inside · curls left').find((r) => r.id === 'foot');
+    expect(foot?.value).toBe('inside · curls left');
     const goal = shotCardRows(summary({ result: 'goal' }), null).map((r) => r.id);
+    expect(goal).not.toContain('foot');
     expect(goal).not.toContain('miss');
     expect(goal).not.toContain('timing');
   });
   it('labels results and missing crossings', () => {
     expect(resultLabel('goal')).toBe('Goal!');
-    expect(resultLabel('wall')).toMatch(/wall/);
+    expect(resultLabel('wall', 'freeKick')).toBe('Blocked by the wall');
+    expect(resultLabel('wall', 'longShot')).toBe('Blocked by the defender');
     expect(crossingLabel(summary({ crossing: null }))).toMatch(/not reach/);
     expect(crossingLabel(summary({ crossing: { x: -1.5, y: 0.4 } }))).toBe('1.50 m left, 0.40 m high');
   });
@@ -97,6 +101,21 @@ describe('mini-map placement', () => {
     }
     expect(minimapPlace(3, 20)).toEqual({ x: 3, z: 20 });
     expect(minimapPlace(0, 5)).toEqual({ x: 0, z: 16 });
+  });
+  it('brute force: every input maps to a legal whole-metre cell near the clamped point', () => {
+    for (let x = -40; x <= 40; x += 0.37) {
+      for (let z = -5; z <= 50; z += 0.41) {
+        const p = minimapPlace(x, z);
+        const d = Math.hypot(p.x, p.z);
+        expect(Number.isInteger(p.x) && Number.isInteger(p.z)).toBe(true);
+        expect(d >= FK_MIN_DIST && d <= FK_MAX_DIST, `${x},${z} -> ${p.x},${p.z}`).toBe(true);
+        expect(p.z).toBeGreaterThanOrEqual(2);
+        expect(Math.abs(p.x)).toBeLessThanOrEqual(22);
+      }
+    }
+    // Cells whose rounding would leave the ring snap to the nearest legal cell instead.
+    const q = minimapPlace(11.4, 11.4); // |p| = 16.1 → round(11,11) = 15.6 m would be illegal
+    expect(Math.hypot(q.x, q.z)).toBeGreaterThanOrEqual(16);
   });
   it('maps screen to metres with letterboxing', () => {
     const box = { left: 100, top: 50, width: 220, height: 200 }; // 44×40 m at 5 px/m

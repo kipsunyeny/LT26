@@ -1,9 +1,10 @@
 // Shot-data card shown after every kick.
-import type { ShotResult, ShotSummary } from '../contracts';
+import type { Mode, ShotResult, ShotSummary } from '../contracts';
 import { formatTiming } from '../input/runUp';
 import { h } from './dom';
 
-export function resultLabel(r: ShotResult): string {
+/** Result wording. 'wall' in a long shot means the closing defender blocked it (there is no wall). */
+export function resultLabel(r: ShotResult, mode?: Mode): string {
   switch (r) {
     case 'goal':
       return 'Goal!';
@@ -16,7 +17,7 @@ export function resultLabel(r: ShotResult): string {
     case 'bar':
       return 'Off the bar';
     case 'wall':
-      return 'Blocked by the wall';
+      return mode === 'longShot' ? 'Blocked by the defender' : 'Blocked by the wall';
     case 'miss':
       return 'Missed';
   }
@@ -35,10 +36,15 @@ export interface ShotCardRow {
   value: string;
 }
 
-export function shotCardRows(s: ShotSummary, timingErrMs: number | null): ShotCardRow[] {
+export function shotCardRows(
+  s: ShotSummary,
+  timingErrMs: number | null,
+  footLabel: string | null = null,
+): ShotCardRow[] {
   const rows: ShotCardRow[] = [
     { id: 'speed', label: 'Ball speed', value: `${s.speedKmh.toFixed(0)} km/h` },
     { id: 'spin', label: 'Spin', value: `${s.spinRps.toFixed(1)} rev/s` },
+    ...(footLabel ? [{ id: 'foot', label: 'Curve', value: footLabel }] : []),
     { id: 'curve', label: 'Lateral curve', value: `${s.lateralCurveM.toFixed(2)} m` },
     { id: 'apex', label: 'Apex', value: `${s.apexM.toFixed(2)} m` },
     { id: 'time', label: 'Time to goal', value: `${s.timeToGoalS.toFixed(2)} s` },
@@ -52,6 +58,7 @@ export function shotCardRows(s: ShotSummary, timingErrMs: number | null): ShotCa
 export function buildShotCard(
   s: ShotSummary,
   timingErrMs: number | null,
+  footLabel: string | null,
   onNext: () => void,
   onReplay: () => void,
 ): HTMLElement {
@@ -60,14 +67,14 @@ export function buildShotCard(
   const replay = h('button', { type: 'button', class: 'btn-secondary', testid: 'btn-replay' }, 'Replay');
   replay.addEventListener('click', onReplay);
   const dl = h('dl', { class: 'card-data' });
-  for (const r of shotCardRows(s, timingErrMs)) {
+  for (const r of shotCardRows(s, timingErrMs, footLabel)) {
     dl.append(h('dt', {}, r.label), h('dd', { testid: `shot-${r.id}` }, r.value));
   }
   return h(
     'div',
     { class: `shot-card is-${s.result}`, testid: 'shot-card', role: 'dialog', 'aria-label': 'Shot data' },
-    h('div', { class: 'card-result', testid: 'shot-result' }, resultLabel(s.result)),
-    dl,
+    h('div', { class: 'card-result', testid: 'shot-result' }, resultLabel(s.result, s.mode)),
+    h('div', { class: 'card-scroll' }, dl),
     h('div', { class: 'card-actions' }, replay, next),
   );
 }

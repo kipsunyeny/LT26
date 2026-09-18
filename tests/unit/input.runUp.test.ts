@@ -3,32 +3,14 @@ import {
   TIMING_IDEAL_POS,
   formatTiming,
   gesturePlan,
-  timingErrorMs,
+  releaseAllowed,
   timingGrade,
   timingMarkerPos,
-  timingPowerMultiplier,
-  timingScatterDeg,
   timingWindowWidth,
 } from '../../src/input/runUp';
 
 describe('run-up timing', () => {
-  it('full power inside ±80 ms, linear to 75 % at 400 ms, clamped beyond', () => {
-    expect(timingPowerMultiplier(0)).toBe(1);
-    expect(timingPowerMultiplier(80)).toBe(1);
-    expect(timingPowerMultiplier(-80)).toBe(1);
-    expect(timingPowerMultiplier(240)).toBeCloseTo(0.875, 12);
-    expect(timingPowerMultiplier(-400)).toBeCloseTo(0.75, 12);
-    expect(timingPowerMultiplier(2000)).toBeCloseTo(0.75, 12);
-  });
-
-  it('extra scatter 0 in the window, up to 3° at 400 ms', () => {
-    expect(timingScatterDeg(50)).toBe(0);
-    expect(timingScatterDeg(240)).toBeCloseTo(1.5, 12);
-    expect(timingScatterDeg(-900)).toBe(3);
-  });
-
   it('grades and labels', () => {
-    expect(timingErrorMs(1030, 1000)).toBe(30);
     expect(timingGrade(30)).toBe('perfect');
     expect(timingGrade(-120)).toBe('early');
     expect(timingGrade(120)).toBe('late');
@@ -64,5 +46,16 @@ describe('gesture plan per mode and phase', () => {
     }
     expect(gesturePlan('freeKick', 'runUp')).toBeNull();
     expect(gesturePlan('penalty', 'pushed')).toBeNull();
+  });
+
+  it('a release only emits if the mode is unchanged and the phase still allows that gesture', () => {
+    const strikeRun = { kind: 'strike' as const, runUp: true };
+    expect(releaseAllowed(strikeRun, 'penalty', 'penalty', 'runUp')).toBe(true);
+    expect(releaseAllowed(strikeRun, 'penalty', 'penalty', 'aiming')).toBe(true);
+    expect(releaseAllowed(strikeRun, 'penalty', 'freeKick', 'aiming')).toBe(false);
+    expect(releaseAllowed(strikeRun, 'penalty', 'penalty', 'flight')).toBe(false);
+    const push = { kind: 'push' as const, runUp: false };
+    expect(releaseAllowed(push, 'longShot', 'longShot', 'aiming')).toBe(true);
+    expect(releaseAllowed(push, 'longShot', 'longShot', 'pushed')).toBe(false);
   });
 });

@@ -8,9 +8,16 @@ const ZERO_NOISE = { sample: (): Vec3 => ({ x: 0, y: 0, z: 0 }) };
 const ENV = { rho: 1.2, seed: 1 };
 
 /** Straight synthetic path from a to b over `dur` s, then continuing; contacts injected at given steps. */
-function synthetic(a: Vec3, b: Vec3, dur: number, inject: Record<number, ContactEvent['tag']> = {}, caughtAt = -1) {
+function synthetic(
+  a: Vec3,
+  b: Vec3,
+  dur: number,
+  inject: Record<number, ContactEvent['tag']> = {},
+  caughtAt = -1,
+  predicted: { x: number; y: number } | null = null,
+) {
   const launch: LaunchParams = { origin: a, speed: 20, azimuth: 0, elevation: 0, sideSpin: 0, topSpin: 0 };
-  const judge = new ShotJudge('freeKick', 'fk-centre', launch);
+  const judge = new ShotJudge('freeKick', 'fk-centre', launch, predicted);
   const v = { x: (b.x - a.x) / dur, y: (b.y - a.y) / dur, z: (b.z - a.z) / dur };
   const dt = 1 / 240;
   let prev: BallState = { t: 0, p: a, v, w: { x: 0, y: 0, z: 0 } };
@@ -79,6 +86,19 @@ describe('rules on synthetic trajectories', () => {
     expect(caught.result).toBe('caught');
     expect(caught.crossing).toBeNull();
     expect(caught.timeToGoalS).toBeCloseTo(100 / 240, 9);
+  });
+  it('saved/blocked shots measure the miss from the pre-contact predicted crossing (0 if on target)', () => {
+    const onTarget = synthetic({ x: 0, y: 1, z: 10 }, { x: 6, y: 1, z: -1 }, 1, { 100: 'keeperHand' }, -1, {
+      x: 3,
+      y: 1,
+    });
+    expect(onTarget.result).toBe('saved');
+    expect(onTarget.missDistanceM).toBe(0);
+    expect(onTarget.timeToGoalS).toBeCloseTo(100 / 240, 9);
+    const wide = synthetic({ x: 0, y: 1, z: 10 }, { x: 6, y: 1, z: -1 }, 1, { 100: 'wall' }, -1, { x: 5, y: 1 });
+    expect(wide.result).toBe('wall');
+    expect(wide.missDistanceM).toBeCloseTo(5 - 3.66, 9);
+    expect(wide.timeToGoalS).toBeCloseTo(100 / 240, 9);
   });
   it('a ball that never reaches the line is decided (stopped / timeout) with its closest approach', () => {
     const s = synthetic({ x: 0, y: 1, z: 10 }, { x: 0, y: 1, z: 9.9 }, 6);

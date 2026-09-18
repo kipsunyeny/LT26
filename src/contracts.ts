@@ -94,6 +94,8 @@ export interface SimulateOptions {
   stopAtRest?: boolean;
   /** Record every Nth step into the returned samples (default 1 = every 1/240 s). */
   sampleEvery?: number;
+  /** Ground contact on (default true). Only the §4 free-flight acceptance rows and the aim solver turn it off. */
+  ground?: boolean;
 }
 
 export interface Trajectory {
@@ -163,11 +165,15 @@ export interface ShotSummary {
   /** Max perpendicular distance of the path from the straight launch line (horizontal), m. */
   lateralCurveM: number;
   apexM: number;
-  /** Time from strike to crossing z = 0 (or to the stopping contact), s. */
+  /** Time from strike to crossing z = 0 in play, or to the deciding contact (save/block), s. */
   timeToGoalS: number;
   /** Where the ball crossed z = 0, or null if it never did. */
   crossing: { x: number; y: number } | null;
-  /** 0 for goals; otherwise distance from the crossing point (or closest approach) to the goal frame, m. */
+  /**
+   * 0 for goals. Otherwise distance from the goal mouth of where the ball would have crossed z = 0:
+   * the real crossing for free-flight misses, the pre-contact predicted crossing for saved/blocked shots
+   * (0 if that prediction was on target), m.
+   */
   missDistanceM: number;
   /** Down-sampled ball path (≈60 Hz) for trails and ghosts. */
   path: Vec3[];
@@ -249,6 +255,8 @@ export interface Sim {
   setSettings(s: Partial<Settings>): void;
   /** Penalty / long shot: start the run-up. Returns the sim time at which contact is ideal. */
   startRunUp(): number;
+  /** Abort a run-up that did not end in a strike (tap, cancelled pointer): back to 'aiming', no penalty. */
+  cancelRunUp(): void;
   /** Apply a push (long shot first touch) or strike. Ignored if the phase does not allow it. */
   applyIntent(intent: KickIntent): void;
   /** Advance by dt seconds (render frame time; internally fixed 240 Hz steps). */

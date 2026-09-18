@@ -3,10 +3,12 @@ import * as THREE from 'three';
 import type { CameraMode, Mode, SceneApi, SceneStats, Vec3, WorldSnapshot } from '../contracts';
 import { BallView, BALL_RADIUS } from './ball';
 import {
+  KickAnchorTracker,
+  kickBallNdcY,
   kickCameraPose,
+  newPose,
   pathBounds,
   replayCameraPose,
-  takerSide,
   titleCameraPose,
   type CameraPose,
   type PathBounds,
@@ -35,11 +37,6 @@ export interface SceneDebugApi extends SceneApi {
 export const MAX_PIXEL_RATIO = 2;
 const TRAIL_COLOR = 0x3fc9fc;
 const MAX_SHADOWS = 14;
-/** Ball speed (m/s) below which it counts as resting for the kick-camera anchor. */
-const REST_SPEED = 1;
-/** Max taker–ball distance (m) for the resting ball to be the kick spot (not a ball resting in the net). */
-const TAKER_NEAR = 4;
-const ANCHOR_TAU = 0.25;
 
 function hasWebGL(): boolean {
   try {
@@ -174,18 +171,15 @@ export function createScene(canvas: HTMLCanvasElement, opts: CreateSceneOptions 
   let cssH = 1;
 
   let camMode: CameraMode = 'kick';
-  let snap = true;
-  let anchor: Vec3 | null = null;
-  let side: -1 | 1 = -1;
+  const tracker = new KickAnchorTracker();
+  const pose = newPose();
   let replayTime = 0;
   let titleTime = 0;
   let bounds: PathBounds | null = null;
   let prevT: number | null = null;
-  const lastBall = new THREE.Vector3();
-  let haveLastBall = false;
   let lost = false;
   let lastFrameAt = 0;
-  let stats: SceneStats = { drawCalls: 0, triangles: 0, frameMs: 0 };
+  const stats: SceneStats = { drawCalls: 0, triangles: 0, frameMs: 0 };
   let dynamicVisible = true;
 
   const onLost = (e: Event) => {
@@ -208,36 +202,23 @@ export function createScene(canvas: HTMLCanvasElement, opts: CreateSceneOptions 
     camera.updateMatrixWorld();
   }
 
-  function updateKickAnchor(world: WorldSnapshot, speed: number, dt: number): void {
-    const b = world.ball.p;
-    const t = world.taker.p;
-    const near = Math.hypot(t.x - b.x, t.z - b.z) < TAKER_NEAR;
-    const resting = speed < REST_SPEED && b.y < 0.25;
-    if (snap || !anchor) {
-      anchor = { x: b.x, y: BALL_RADIUS, z: b.z };
-      side = takerSide(anchor, t);
-      snap = false;
-      return;
-    }
-    if (resting && near) {
-      const k = 1 - Math.exp(-dt / ANCHOR_TAU);
-      anchor = { x: anchor.x + (b.x - anchor.x) * k, y: BALL_RADIUS, z: anchor.z + (b.z - anchor.z) * k };
-      side = takerSide(anchor, t);
-    }
-  }
-
-  function updateCamera(world: WorldSnapshot, speed: number, dt: number): void {
+  function updateCamera(world: WorldSnapshot, clockDt: number, dt: number): void {
     const aspect = cssW / Math.max(1, cssH);
     if (camMode === 'kick') {
-      updateKickAnchor(world, speed, dt);
-      applyPose(kickCameraPose(anchor ?? world.ball.p, side));
+      tracker.update(world.ball.p, world.taker.p, clockDt);
+      applyPose(kickCameraPose(tracker.anchor, tracker.side, kickBallNdcY(cssH), pose));
     } else if (camMode === 'replay') {
       replayTime += dt;
-      applyPose(replayCameraPose(bounds ?? pathBounds([], world.ball.p), replayTime, aspect));
+      if (!bounds) bounds = pathBounds([], world.ball.p);
+      applyPose(replayCameraPose(bounds, replayTime, aspect, pose));
     } else {
       titleTime += dt;
-      applyPose(titleCameraPose(titleTime));
+      applyPose(titleCameraPose(titleTime, pose));
     }
+    const e = camera.position;
+    trail.setEye(e.x, e.y, e.z);
+    ghost.setEye(e.x, e.y, e.z);
+    aim.setEye(e.x, e.y, e.z);
   }
 
   function updateShadows(world: WorldSnapshot): void {
@@ -261,7 +242,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: CreateSceneOptions 
     ready: talilei.ready,
 
     setMode(_mode: Mode): void {
-      snap = true;
+      tracker.requestSnap();
       replayTime = 0;
       prevT = null;
     },
@@ -269,7 +250,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: CreateSceneOptions 
     setCamera(mode: CameraMode): void {
       if (mode === camMode) return;
       camMode = mode;
-      if (mode === 'kick') snap = true;
+      if (mode === 'kick') tracker.requestSnap();
       if (mode === 'replay') replayTime = 0;
       if (mode === 'title') titleTime = 0;
       prevT = null;
@@ -287,40 +268,30 @@ export function createScene(canvas: HTMLCanvasElement, opts: CreateSceneOptions 
       const dT = prevT === null ? 0 : world.t - prevT;
       const spinDt = dT > 0 && dT <= 0.1 ? dT : dT === 0 ? dt : 0;
       const b = world.ball.p;
-      let speed = 0;
-      if (haveLastBall && (dT > 0 || dt > 0)) {
-        speed = Math.hypot(b.x - lastBall.x, b.y - lastBall.y, b.z - lastBall.z) / Math.max(dT > 0 ? dT : dt, 1e-3);
-      }
-      lastBall.set(b.x, b.y, b.z);
-      haveLastBall = true;
       prevT = world.t;
 
-      updateCamera(world, speed, dt);
+      updateCamera(world, dT > 0 ? dT : dt, dt);
       ball.update(b, world.ball.w, spinDt);
       keeper.update(world.keeper);
-      const facing = anchor ?? b;
-      const players = world.defender ? [...world.wall, { p: world.defender.p, jump: 0 }] : world.wall;
-      outfield.update(players, facing);
+      outfield.update(world.wall, world.defender, tracker.valid ? tracker.anchor : b);
       talilei.update(world.taker.p, world.taker.stride, camera.position, camMode !== 'title');
       if (!dynamicVisible) talilei.mesh.visible = false;
       // Lines belong to play/replay only; the title backdrop stays clean.
-      for (const line of [trail, ghost, aim]) {
-        line.mesh.visible = dynamicVisible && camMode !== 'title' && line.mesh.geometry.drawRange.count > 0;
-      }
+      const showLines = dynamicVisible && camMode !== 'title';
+      trail.mesh.visible = showLines && trail.indexCount > 0;
+      ghost.mesh.visible = showLines && ghost.indexCount > 0;
+      aim.mesh.visible = showLines && aim.indexCount > 0;
       updateShadows(world);
 
       if (lost) return;
       renderer.render(scene, camera);
-      stats = {
-        drawCalls: renderer.info.render.calls,
-        triangles: renderer.info.render.triangles,
-        frameMs: stats.frameMs,
-      };
+      stats.drawCalls = renderer.info.render.calls;
+      stats.triangles = renderer.info.render.triangles;
     },
 
     setTrail(points: Vec3[] | null, ghostPts?: Vec3[] | null): void {
-      trail.set(points);
-      bounds = points && points.length > 0 ? pathBounds(points, points[0]) : null;
+      const changed = trail.set(points);
+      if (changed !== 'unchanged') bounds = points && points.length > 0 ? pathBounds(points, points[0]) : null;
       if (ghostPts !== undefined) ghost.set(ghostPts);
       if (!dynamicVisible) {
         trail.mesh.visible = false;
@@ -364,9 +335,9 @@ export function createScene(canvas: HTMLCanvasElement, opts: CreateSceneOptions 
       for (const o of dynamic) o.visible = on;
       if (on) {
         // Restore the visibility rules of the actors that manage it themselves.
-        trail.mesh.visible = trail.mesh.geometry.drawRange.count > 0;
-        ghost.mesh.visible = ghost.mesh.geometry.drawRange.count > 0;
-        aim.mesh.visible = aim.mesh.geometry.drawRange.count > 0;
+        trail.mesh.visible = trail.indexCount > 0;
+        ghost.mesh.visible = ghost.indexCount > 0;
+        aim.mesh.visible = aim.indexCount > 0;
       }
     },
 

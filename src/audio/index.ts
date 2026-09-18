@@ -202,6 +202,36 @@ export function createAudio(): AudioApi {
     }
   };
 
+  let resuming = false;
+  /** Resumes a suspended/interrupted context (iOS suspends it on calls, lock screen, tab switches). */
+  const resume = (): void => {
+    try {
+      const s = synth;
+      if (!s) return;
+      if (s.ctx.state === 'running') {
+        startPendingMurmur();
+        return;
+      }
+      if (resuming) return;
+      resuming = true;
+      s.ctx.resume().then(
+        () => {
+          resuming = false;
+          startPendingMurmur();
+        },
+        () => {
+          resuming = false;
+        },
+      );
+    } catch {
+      resuming = false;
+    }
+  };
+
+  const onVisibility = (): void => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') resume();
+  };
+
   const ensure = (): Synth | null => {
     if (synth || failed) return synth;
     const C = audioContextCtor();
@@ -212,6 +242,9 @@ export function createAudio(): AudioApi {
     try {
       synth = new Synth(new C());
       synth.setEnabled(enabled);
+      if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+        document.addEventListener('visibilitychange', onVisibility);
+      }
     } catch {
       failed = true;
       synth = null;
@@ -262,12 +295,10 @@ export function createAudio(): AudioApi {
       }
     },
 
+    /** Idempotent: creates the context once, then resumes it whenever it is not running. */
     unlock(): void {
       try {
-        const s = ensure();
-        if (!s) return;
-        if (s.ctx.state === 'running') startPendingMurmur();
-        else s.ctx.resume().then(startPendingMurmur, () => undefined);
+        if (ensure()) resume();
       } catch {
         // See play().
       }

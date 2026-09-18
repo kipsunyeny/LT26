@@ -5,8 +5,10 @@ import { DEFENDER_HEIGHT, DEFENDER_RADIUS } from './wall';
 import { clamp, flatDir, len, rightOf, sub, v3 } from './vec';
 
 export const LS_KEEPER_Z = 0.6;
-/** Push speed for push power 0..1, m/s. */
-export const pushSpeed = (power: number): number => 3 + 3 * clamp(power, 0, 1);
+/** Push speed for push power 0..1, m/s: a short touch that rolls ≈2–5 m before the taker reaches it. */
+export const pushSpeed = (power: number): number => PUSH_MIN_SPEED + PUSH_SPEED_RANGE * clamp(power, 0, 1);
+export const PUSH_MIN_SPEED = 2.2;
+export const PUSH_SPEED_RANGE = 1.3;
 
 export const TAKER_RUN = { a: 6, v: 7.5, brake: 8, reach: 0.15 } as const;
 export const DEFENDER = {
@@ -39,6 +41,8 @@ function steer(m: Mover, vdes: Vec3, a: number, dt: number): Mover {
 
 /** The ball must first get this far ahead of the taker (after the push) before he can "reach" it again, m. */
 export const PUSH_SEPARATION = 0.5;
+/** Time the taker needs to finish the push touch before he runs after the ball, s. */
+export const PUSH_RECOVERY_S = 0.3;
 
 export interface Chase {
   m: Mover;
@@ -49,8 +53,19 @@ export interface Chase {
  * Taker chasing the strike position beside the rolling ball. Returns the new chase state and whether he has
  * reached the ball (only after the push has first put it ≥ 0.5 m ahead of him).
  */
-export function chaseStep(c: Chase, strikePos: Vec3, ballVel: Vec3, dt: number): { c: Chase; reached: boolean } {
+export function chaseStep(
+  c: Chase,
+  strikePos: Vec3,
+  ballVel: Vec3,
+  elapsed: number,
+  dt: number,
+): { c: Chase; reached: boolean } {
   const taker = c.m;
+  // Finishing the push touch: he only sets off after PUSH_RECOVERY_S.
+  if (elapsed < PUSH_RECOVERY_S) {
+    const d0 = len(v3(strikePos.x - taker.p.x, 0, strikePos.z - taker.p.z));
+    return { c: { m: taker, separated: c.separated || d0 > PUSH_SEPARATION }, reached: false };
+  }
   const d = sub(strikePos, taker.p);
   d.y = 0;
   const dist = len(d);

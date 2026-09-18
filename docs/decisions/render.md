@@ -3,7 +3,14 @@
 - **Talilei's drawn ball is erased at load time.** The brand art has a ball between his feet; a canvas `destination-out` pass (traced leg edge + circle, `processTalileiImage`) removes it so only the real 3D ball shows. The source asset is untouched.
 - **Talilei is hidden under the title camera, and so are trails/ghost/aim.** The title UI shows its own 2D Talilei over a dimmed backdrop; a second 3D one would duplicate him.
 - **Kick camera: 4.5 m behind, 2.3 m high, shifted 0.5 m away from the taker, pitch chosen so the resting ball sits at NDC y = −0.55.** This puts Talilei (placed left of the ball by the sim) in the lower-left and the crossbar in the top third at every distance from 11 to 35 m. The taker side is inferred from `world.taker.p`, so left-footers mirror automatically.
-- **Kick camera anchor follows the ball only while it rests (< 1 m/s, y < 0.25) with the taker within 4 m of it,** smoothed (τ = 0.25 s), and snaps on `setMode`/`setCamera('kick')`. The camera follows spot changes in setup but stays put when the ball stops in the net or a long-shot push rolls away.
+- **Kick camera anchor (`KickAnchorTracker`, pure, unit-tested):**
+  - A ball resting on the ground (< 1 m/s, y < 0.25) with the taker within 4 m is the kick spot. The camera snaps to it when a snap was requested or the spot jumped more than 2 m (Next kick, a preset change); otherwise it glides (τ = 0.25 s).
+  - A ball rolling on the ground below 10 m/s with the taker within 8 m (the long-shot push) is followed exactly, so it keeps its size for the strike.
+  - A ball above 10 m/s has been struck. The anchor freezes until the ball rests beside the taker again, so the camera never follows a shot or snaps onto a ball in the net after Replay → Back.
+  - With no known spot, the anchor is derived from the taker's position.
+- **Trail tubes thin inside 3 m of the camera and drop segments within 1.5 m,** so a trail can never fill the screen. A growing trail (same or prefix-equal array) is appended in place, an identical one is a no-op, and the eye-based rebuild only happens when the camera move can affect thinning.
+- **Short screens: the resting ball's NDC y is `clamp(280/H − 1, −0.55, −0.4)`.** Framing is unchanged for heights ≥ 622 px (1280×800); on short screens the ball keeps about 140 px above the bottom HUD.
+- **Audio `unlock()` is idempotent.** It creates the context once, and every call resumes a context that isn't running (iOS 'interrupted'/'suspended'). A `visibilitychange` → visible listener does the same.
 - **`setTrail(points)` with `ghost` undefined leaves the ghost unchanged; `null` clears it.** The UI can then update the live trail every frame without passing the ghost again.
 - **Ball spin integrates over the snapshot clock (`world.t` delta) when it advances, else over render dt.** Replays played at 0.35× therefore spin at 0.35× too.
 - **`getStats().frameMs` is an EMA of the wall-clock interval between `render()` calls** (the frame period), not CPU time.

@@ -86,19 +86,20 @@ export class OutfieldView {
     this.mesh.frustumCulled = false;
   }
 
-  /** Each player faces `facing` (usually the ball's resting spot). */
-  update(players: { p: Vec3; jump: number }[], facing: Vec3): void {
-    const n = Math.min(players.length, MAX_OUTFIELD);
-    for (let i = 0; i < n; i++) {
-      const pl = players[i];
-      const yaw = Math.atan2(facing.x - pl.p.x, facing.z - pl.p.z);
-      this.q.setFromAxisAngle(this.yAxis, yaw);
-      this.t.set(pl.p.x, pl.p.y + Math.max(0, pl.jump), pl.p.z);
-      this.m.compose(this.t, this.q, this.s);
-      this.mesh.setMatrixAt(i, this.m);
-    }
+  /** Wall players (and the optional long-shot defender) face `facing` (usually the ball's resting spot). */
+  update(wall: readonly { p: Vec3; jump: number }[], defender: { p: Vec3 } | null, facing: Vec3): void {
+    let n = 0;
+    for (let i = 0; i < wall.length && n < MAX_OUTFIELD; i++) this.place(n++, wall[i].p, wall[i].jump, facing);
+    if (defender && n < MAX_OUTFIELD) this.place(n++, defender.p, 0, facing);
     this.mesh.count = n;
     this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  private place(i: number, p: Vec3, jump: number, facing: Vec3): void {
+    this.q.setFromAxisAngle(this.yAxis, Math.atan2(facing.x - p.x, facing.z - p.z));
+    this.t.set(p.x, p.y + Math.max(0, jump), p.z);
+    this.m.compose(this.t, this.q, this.s);
+    this.mesh.setMatrixAt(i, this.m);
   }
 
   dispose(): void {

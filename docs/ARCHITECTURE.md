@@ -1,6 +1,6 @@
 # LT26 Architecture
 
-Status: **contract v1** (Phase 0). The TypeScript source of truth is [`src/contracts.ts`](../src/contracts.ts). This document explains it and fixes the module boundaries, file ownership and public entry points. Interfaces change only by editing this file and `src/contracts.ts` first (orchestrator), then dispatching the change to every affected owner.
+Status: **contract v2** (Phase 2: added `Sim.cancelRunUp()` and `SimulateOptions.ground`). The TypeScript source of truth is [`src/contracts.ts`](../src/contracts.ts). This document explains it and fixes the module boundaries, file ownership and public entry points. Interfaces change only by editing this file and `src/contracts.ts` first (orchestrator), then dispatching the change to every affected owner.
 
 ## 1. Layers and dependency rules
 

@@ -1,37 +1,10 @@
-// Run-up timing helpers shared by both control schemes and the HUD timing indicator.
-// The sim is the authority on the actual penalty (docs/ARCHITECTURE.md §2); these helpers
-// mirror its rule so the HUD can show the player what a given release timing will cost.
+// Run-up helpers shared by both control schemes and the HUD timing indicator. The power/scatter
+// rule for a mistimed strike lives in the sim (sim/kick.ts); the UI only shows where the ideal
+// contact is and grades a release.
+import type { InputContext } from '../contracts';
 
-/** Half-width of the "perfect" contact window, ms. */
+/** Half-width of the "perfect" contact window, ms (docs/ARCHITECTURE.md §2). */
 export const TIMING_WINDOW_MS = 80;
-/** Beyond this error the penalty is at its maximum, ms. */
-export const TIMING_MAX_ERR_MS = 400;
-/** Power multiplier at (and beyond) the maximum error. */
-export const TIMING_MIN_POWER = 0.75;
-/** Extra aim scatter σ at (and beyond) the maximum error, degrees. */
-export const TIMING_MAX_SCATTER_DEG = 3;
-
-/** Signed timing error of a release: negative = early, positive = late. */
-export function timingErrorMs(atMs: number, idealContactMs: number): number {
-  return atMs - idealContactMs;
-}
-
-/** 0 inside the window, rising linearly to 1 at TIMING_MAX_ERR_MS, clamped. */
-function penaltyFraction(errMs: number): number {
-  const e = Math.abs(errMs);
-  if (e <= TIMING_WINDOW_MS) return 0;
-  return Math.min(1, (e - TIMING_WINDOW_MS) / (TIMING_MAX_ERR_MS - TIMING_WINDOW_MS));
-}
-
-/** Power multiplier for a timing error (1 in the window, falls linearly to 0.75). */
-export function timingPowerMultiplier(errMs: number): number {
-  return 1 - (1 - TIMING_MIN_POWER) * penaltyFraction(errMs);
-}
-
-/** Extra aim scatter σ in degrees for a timing error (0 in the window, up to 3°). */
-export function timingScatterDeg(errMs: number): number {
-  return TIMING_MAX_SCATTER_DEG * penaltyFraction(errMs);
-}
 
 export type TimingGrade = 'perfect' | 'early' | 'late';
 
@@ -86,4 +59,35 @@ export function gesturePlan(mode: 'freeKick' | 'penalty' | 'longShot', phase: st
     default:
       return null;
   }
+}
+
+/**
+ * Optional app-side hooks a scheme may use on top of the contract's InputContext
+ * (the app wires them; a bare InputContext still works).
+ */
+export interface InputContextExtras {
+  /** Abort a run-up that did not end in a strike (tap, cancelled pointer). */
+  cancelRunUp?(): void;
+  /** A gesture is in progress (true on press, false on release/cancel): the HUD ignores menu presses. */
+  gesture?(active: boolean): void;
+  /** Power for a long-shot tap strike (last dial power, default 0.7). */
+  tapPower?(): number;
+}
+
+export type AppInputContext = InputContext & InputContextExtras;
+
+export function extras(ctx: InputContext): InputContextExtras {
+  return ctx as AppInputContext;
+}
+
+/** Release check: the mode must be unchanged and the current phase must still allow this gesture kind. */
+export function releaseAllowed(
+  plan: GesturePlan,
+  modeAtDown: 'freeKick' | 'penalty' | 'longShot',
+  modeNow: 'freeKick' | 'penalty' | 'longShot',
+  phaseNow: string,
+): boolean {
+  if (modeAtDown !== modeNow) return false;
+  const now = gesturePlan(modeNow, phaseNow);
+  return now !== null && now.kind === plan.kind;
 }

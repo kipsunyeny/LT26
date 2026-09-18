@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { PointerSample } from '../../src/contracts';
 import {
+  CONTACT_BAND_MIN_PX,
+  CSS_PX_PER_INCH,
+  CSS_PX_PER_INCH_COARSE,
   CSS_PX_PER_METRE,
+  CSS_PX_PER_METRE_COARSE,
+  contactBandPx,
+  contactFromStart,
+  pxPerMetreFor,
+  tapStrikeIntent,
   FINGER_MAX_MPS,
   FINGER_MIN_MPS,
   basisFromProjection,
@@ -69,7 +77,7 @@ describe('swipeToIntent', () => {
 
   it('start on the top of the ball → top spin and a lower launch than a centre start', () => {
     const centre = swipeToIntent(path(640, 640, 640, 300, 60), BALL, { atMs: 0 })!;
-    const top = swipeToIntent(path(640, 640 - BALL.r, 640, 300, 60), BALL, { atMs: 0 })!;
+    const top = swipeToIntent(path(640, 640 - 40, 640, 300, 60), BALL, { atMs: 0 })!;
     expect(top.topSpin).toBeGreaterThan(0);
     if (top.aim.kind !== 'angles' || centre.aim.kind !== 'angles') throw new Error('angles expected');
     expect(top.aim.elevation).toBeLessThan(centre.aim.elevation);
@@ -78,7 +86,7 @@ describe('swipeToIntent', () => {
 
   it('start on the bottom of the ball → back spin and a higher (lofted) launch', () => {
     const centre = swipeToIntent(path(640, 640, 640, 300, 60), BALL, { atMs: 0 })!;
-    const bottom = swipeToIntent(path(640, 640 + BALL.r, 640, 300, 60), BALL, { atMs: 0 })!;
+    const bottom = swipeToIntent(path(640, 640 + 40, 640, 300, 60), BALL, { atMs: 0 })!;
     expect(bottom.topSpin).toBeLessThan(0);
     if (bottom.aim.kind !== 'angles' || centre.aim.kind !== 'angles') throw new Error('angles expected');
     expect(bottom.aim.elevation).toBeGreaterThan(centre.aim.elevation);
@@ -178,5 +186,49 @@ describe('signedCurvature', () => {
     expect(b).toBeCloseTo(-a, 12);
     // Circular-ish arc: area ≈ (2/π)·sagitta·chord for a sine bow → k ≈ (2/π)(s/L).
     expect(a).toBeCloseTo((2 / Math.PI) * (30 / 300), 2);
+  });
+});
+
+describe('contact band on the ball', () => {
+  it('reads top/centre/bottom over at least ±40 px with a ±10 px centre dead band', () => {
+    const small = { x: 0, y: 100, r: 6 };
+    expect(contactBandPx(6)).toBe(CONTACT_BAND_MIN_PX);
+    expect(contactFromStart({ x: 0, y: 108 }, small)).toBe(0);
+    expect(contactFromStart({ x: 0, y: 92 }, small)).toBe(0);
+    expect(contactFromStart({ x: 0, y: 60 }, small)).toBe(-1);
+    expect(contactFromStart({ x: 0, y: 140 }, small)).toBe(1);
+    expect(contactFromStart({ x: 0, y: 75 }, small)).toBeCloseTo(-0.5, 9);
+  });
+  it('scales with the 2.2 r ring for big balls', () => {
+    const big = { x: 0, y: 0, r: 30 };
+    expect(contactBandPx(30)).toBeCloseTo(66, 9);
+    expect(contactFromStart({ x: 0, y: -40 }, big)).toBe(-1 * ((40 - 10) / (66 - 10)));
+    expect(contactFromStart({ x: 0, y: 66 }, big)).toBe(1);
+  });
+});
+
+describe('pixel density for finger speed', () => {
+  it('uses 96 CSS px/in for mouse and 150 CSS px/in for coarse (touch) pointers', () => {
+    expect(CSS_PX_PER_INCH).toBe(96);
+    expect(CSS_PX_PER_INCH_COARSE).toBe(150);
+    expect(pxPerMetreFor(false)).toBeCloseTo(3779.53, 1);
+    expect(pxPerMetreFor(true)).toBeCloseTo(5905.51, 1);
+    expect(CSS_PX_PER_METRE_COARSE).toBe(pxPerMetreFor(true));
+    // Same swipe on a touch screen is a slower finger in metres.
+    const p: PointerSample[] = [
+      { x: 0, y: 0, t: 0 },
+      { x: 0, y: -590.551, t: 100 },
+    ];
+    expect(releaseSpeedMps(p, pxPerMetreFor(true))).toBeCloseTo(1, 3);
+  });
+});
+
+describe('long-shot tap strike', () => {
+  it('aims at the goal centre along the pitch with no spin and the given power', () => {
+    const basis = { forward: { x: 0, y: -1 }, right: { x: 1, y: 0 }, baseAzimuth: 0.3 };
+    const i = tapStrikeIntent(basis, 0.62, 1234);
+    expect(i).toMatchObject({ kind: 'strike', scheme: 'swipe', power: 0.62, sideSpin: 0, topSpin: 0, atMs: 1234 });
+    expect(i.aim).toMatchObject({ kind: 'angles', azimuth: 0.3 });
+    expect(tapStrikeIntent(undefined, 3, 0).power).toBe(1);
   });
 });

@@ -12,6 +12,11 @@
   --sky-mid: rgba(63, 201, 252, 0.45);
   --radius: 14px;
   --gap: 12px;
+  /* Notches / rounded corners (index.html uses viewport-fit=cover). */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
   font-family:
     system-ui,
     -apple-system,
@@ -126,13 +131,16 @@ input:focus-visible,
 }
 
 /* ---------- Title ---------- */
+/* Three columns: logo | menu | Talilei (full height, his column is as wide as the image), so he
+   never covers the menu at any landscape width. */
 .screen-title {
   pointer-events: auto;
   display: grid;
-  grid-template-columns: minmax(0, 30vw) minmax(300px, 440px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) min(420px, max(280px, 38vw)) auto;
   align-items: center;
-  gap: 2vw;
-  padding: 0 2vw;
+  column-gap: 2vw;
+  padding: 0 var(--safe-r) 0 calc(2vw + var(--safe-l));
+  height: 100%;
 }
 
 .title-dim {
@@ -144,6 +152,7 @@ input:focus-visible,
 .title-logo-wrap,
 .title-menu {
   position: relative;
+  min-width: 0;
 }
 
 .title-logo-wrap {
@@ -152,7 +161,7 @@ input:focus-visible,
 }
 
 .title-logo {
-  width: min(28vw, 62vh);
+  width: min(100%, 62vh);
   height: auto;
   filter: drop-shadow(0 8px 24px rgba(0, 14, 41, 0.8));
 }
@@ -165,17 +174,17 @@ input:focus-visible,
 
 .title-name {
   margin: 0;
-  font-size: clamp(22px, 2.8vw, 38px);
-  white-space: nowrap;
+  font-size: clamp(18px, 2.8vw, 38px);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   line-height: 1.1;
+  white-space: nowrap;
 }
 
 .title-tag {
   margin: 0 0 6px;
   font-size: 14px;
-  letter-spacing: 0.24em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--dim);
 }
@@ -202,11 +211,13 @@ input:focus-visible,
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .btn-mode-sub {
   font-size: 14px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .title-row {
@@ -219,19 +230,44 @@ input:focus-visible,
 }
 
 .title-talilei {
-  position: absolute;
-  right: 2vw;
-  bottom: 0;
-  height: min(96vh, calc(36vw / 0.75));
+  position: relative;
+  align-self: end;
+  justify-self: end;
+  height: 100vh;
+  height: 100dvh;
   width: auto;
-  max-width: 36vw;
-  object-fit: contain;
-  object-position: bottom right;
+  max-width: none;
   pointer-events: none;
   filter: drop-shadow(0 12px 30px rgba(0, 14, 41, 0.7));
 }
 
+@media (max-height: 520px), (max-width: 899px) {
+  .title-menu {
+    gap: 8px;
+  }
+  .title-tag {
+    letter-spacing: 0.12em;
+    white-space: nowrap;
+  }
+  .btn-mode {
+    min-height: 48px;
+    padding: 0 16px;
+  }
+  .btn-mode-label {
+    font-size: 16px;
+  }
+  .title-tag {
+    margin-bottom: 0;
+  }
+}
+
 /* ---------- Play HUD ---------- */
+/* Layout rules (right-footed; mirrored where noted for left-footers, [data-footed='left']):
+   - Talilei stands bottom-left of the ball (bottom-right for left-footers): that 30 % × 45 % corner
+     stays free of controls;
+   - top bar (menu + mode tabs, hint) and the set-up panel (mini-map, spots) at the top;
+   - dial controls bottom-right (bottom-left for left-footers);
+   - shot card on the side opposite the set-up panel's column. */
 .screen-play {
   pointer-events: none;
 }
@@ -307,9 +343,9 @@ input:focus-visible,
 
 .hud-top {
   position: absolute;
-  top: 12px;
-  left: 12px;
-  right: 112px;
+  top: calc(12px + var(--safe-t));
+  left: calc(12px + var(--safe-l));
+  right: calc(112px + var(--safe-r));
   display: flex;
   align-items: flex-start;
   gap: var(--gap);
@@ -340,6 +376,7 @@ input:focus-visible,
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .tab.is-active {
@@ -353,6 +390,7 @@ input:focus-visible,
   border-radius: 22px;
   padding: 0 16px;
   font-size: 15px;
+  white-space: nowrap;
 }
 
 .hud-center {
@@ -386,8 +424,8 @@ input:focus-visible,
 
 .hud-logo {
   position: absolute;
-  top: 10px;
-  right: 12px;
+  top: calc(10px + var(--safe-t));
+  right: calc(12px + var(--safe-r));
   width: 88px;
   height: 88px;
   z-index: 3;
@@ -397,9 +435,9 @@ input:focus-visible,
 
 .hud-side {
   position: absolute;
-  top: 70px;
-  left: 12px;
-  width: 256px;
+  top: calc(70px + var(--safe-t));
+  left: calc(12px + var(--safe-l));
+  width: 272px;
   padding: 12px;
   border-radius: var(--radius);
   background: var(--panel);
@@ -430,8 +468,10 @@ input:focus-visible,
 }
 
 .minimap {
-  width: 100%;
-  height: min(22vh, 180px);
+  height: min(20vh, 160px);
+  width: auto;
+  aspect-ratio: 44 / 40;
+  align-self: center;
   touch-action: none;
   cursor: grab;
   display: block;
@@ -485,20 +525,25 @@ input:focus-visible,
 
 .spot-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
 .spot,
 .toggle {
   min-height: 44px;
-  padding: 0 8px;
+  padding: 0 4px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.1);
   color: var(--white);
   border: 1px solid var(--line);
   font-size: 14px;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+.toggle {
+  padding: 0 12px;
 }
 
 .spot.is-active,
@@ -510,7 +555,7 @@ input:focus-visible,
 
 .timing {
   position: absolute;
-  top: 128px;
+  top: calc(128px + var(--safe-t));
   left: 50%;
   transform: translateX(-50%);
   width: 320px;
@@ -601,25 +646,36 @@ input:focus-visible,
 }
 
 .dial-aim {
-  position: absolute;
-  right: 12px;
-  bottom: 176px;
-  padding: 6px 12px;
-  border-radius: 10px;
-  background: var(--panel);
   font-size: 14px;
-  pointer-events: none;
+  color: var(--dim);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .dial-panel {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
+  right: calc(12px + var(--safe-r));
+  bottom: calc(12px + var(--safe-b));
   display: flex;
   align-items: stretch;
   gap: 10px;
   z-index: 3;
+}
+
+[data-footed='left'] .dial-panel {
+  right: auto;
+  left: calc(12px + var(--safe-l));
+  flex-direction: row-reverse;
+}
+
+.dial-knobs-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+[data-footed='left'] .dial-knobs-row {
+  flex-direction: row-reverse;
 }
 
 .dial-box {
@@ -629,11 +685,11 @@ input:focus-visible,
 }
 
 .dial-power {
-  width: 250px;
+  width: 260px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .dial-label {
@@ -708,6 +764,7 @@ input:focus-visible,
   position: relative;
   width: 56px;
   height: 56px;
+  flex-shrink: 0;
   border-radius: 50%;
   border: 3px solid rgba(255, 255, 255, 0.4);
   background: rgba(255, 255, 255, 0.06);
@@ -718,16 +775,17 @@ input:focus-visible,
   left: calc(50% - 2px);
   top: 4px;
   width: 4px;
-  height: 21px;
+  height: calc(50% - 7px);
   border-radius: 2px;
   background: var(--sky);
-  transform-origin: 2px 21px;
+  transform-origin: 2px 100%;
 }
 
 .knob-value {
   font-size: 16px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .knob-label {
@@ -739,6 +797,7 @@ input:focus-visible,
 
 .btn-shoot {
   align-self: center;
+  flex-shrink: 0;
   width: 96px;
   height: 96px;
   border-radius: 50%;
@@ -760,10 +819,16 @@ input:focus-visible,
 /* ---------- Shot card ---------- */
 .card-holder {
   position: absolute;
-  top: 108px;
-  right: 12px;
+  top: calc(108px + var(--safe-t));
+  right: calc(12px + var(--safe-r));
   z-index: 4;
   pointer-events: auto;
+}
+
+[data-footed='left'] .card-holder {
+  right: auto;
+  left: calc(12px + var(--safe-l));
+  top: calc(70px + var(--safe-t));
 }
 
 .card-holder:empty {
@@ -772,6 +837,9 @@ input:focus-visible,
 
 .shot-card {
   width: 310px;
+  max-height: calc(100vh - 120px - var(--safe-t) - var(--safe-b));
+  display: flex;
+  flex-direction: column;
   padding: 16px 18px;
   border-radius: 16px;
   background: var(--panel-solid);
@@ -780,15 +848,24 @@ input:focus-visible,
 }
 
 .card-result {
+  flex-shrink: 0;
   font-size: 26px;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   margin-bottom: 8px;
+  line-height: 1.15;
 }
 
 .shot-card.is-goal .card-result {
   color: var(--sky);
+}
+
+.card-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
 }
 
 .card-data {
@@ -811,12 +888,215 @@ input:focus-visible,
 }
 
 .card-actions {
+  flex-shrink: 0;
   display: flex;
   gap: 10px;
 }
 
 .card-actions > button {
   flex: 1;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+/* ---------- Medium screens (small laptops, 10" tablets in split view, 1024×600): the dial
+   controls stack into a column at the side so they stay clear of the ball; the set-up panel
+   goes horizontal so it stays clear of Talilei. ---------- */
+@media (max-width: 1099px), (max-height: 699px) {
+  .hud-side {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    width: auto;
+    max-width: calc(100vw - 24px);
+    padding: 8px;
+    gap: 8px;
+  }
+  .hud-side > .panel-label,
+  .minimap-wrap .panel-label,
+  .mm-readout {
+    display: none;
+  }
+  .minimap {
+    height: 100px;
+  }
+  .spot-grid {
+    grid-template-columns: repeat(3, auto);
+  }
+  .spot {
+    padding: 0 10px;
+  }
+  .hud-side .panel-note {
+    max-width: 200px;
+  }
+  .dial-panel,
+  [data-footed='left'] .dial-panel {
+    flex-direction: column;
+    width: 256px;
+    gap: 6px;
+  }
+  .dial-power {
+    width: auto;
+    padding: 6px 12px;
+  }
+  .dial-knobs-row {
+    gap: 6px;
+    align-items: center;
+  }
+  .dial-knobs {
+    flex: 1;
+    padding: 6px 8px;
+    gap: 4px;
+    justify-content: space-around;
+  }
+  .knob {
+    width: 76px;
+  }
+  .knob-dial {
+    width: 40px;
+    height: 40px;
+  }
+  .knob-extra {
+    display: none;
+  }
+  .btn-shoot {
+    width: 72px;
+    height: 72px;
+    font-size: 15px;
+  }
+  /* The result card takes the controls' place while it is shown. */
+  [data-phase='result'] .dial-panel {
+    visibility: hidden;
+  }
+  .card-holder {
+    top: calc(104px + var(--safe-t));
+  }
+  [data-footed='left'] .card-holder {
+    top: calc(70px + var(--safe-t));
+  }
+  [data-footed='left'] .hud-side {
+    left: auto;
+    right: calc(8px + var(--safe-r));
+    top: calc(104px + var(--safe-t));
+  }
+  .timing {
+    top: calc(64px + var(--safe-t));
+    width: 240px;
+    padding: 6px 12px;
+  }
+}
+
+/* ---------- Compact (phones in landscape, ≈740×360): smaller chrome everywhere. ---------- */
+@media (max-width: 899px), (max-height: 439px) {
+  .hud-top {
+    top: calc(8px + var(--safe-t));
+    left: calc(8px + var(--safe-l));
+    right: calc(72px + var(--safe-r));
+    gap: 8px;
+  }
+  .hud-nav,
+  .tabs {
+    gap: 4px;
+  }
+  .tab,
+  .btn-back {
+    padding: 0 10px;
+    font-size: 14px;
+  }
+  .hint {
+    max-width: 100%;
+    padding: 6px 10px;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hud-center {
+    align-items: stretch;
+  }
+  .last-intent,
+  .hud-side .panel-note {
+    display: none;
+  }
+  .hud-logo {
+    top: calc(8px + var(--safe-t));
+    right: calc(8px + var(--safe-r));
+    width: 56px;
+    height: 56px;
+  }
+  .hud-side {
+    top: calc(60px + var(--safe-t));
+    left: calc(8px + var(--safe-l));
+    padding: 6px;
+    gap: 6px;
+  }
+  [data-footed='left'] .hud-side {
+    top: calc(70px + var(--safe-t));
+  }
+  .minimap {
+    height: 88px;
+  }
+  .spot-grid {
+    gap: 4px;
+  }
+  .dial-panel {
+    right: calc(8px + var(--safe-r));
+    bottom: calc(8px + var(--safe-b));
+  }
+  [data-footed='left'] .dial-panel {
+    left: calc(8px + var(--safe-l));
+  }
+  .dial-panel,
+  [data-footed='left'] .dial-panel {
+    width: 244px;
+  }
+  .dial-label {
+    display: none;
+  }
+  .dial-power {
+    padding: 6px 10px;
+    gap: 2px;
+  }
+  .knob {
+    width: 70px;
+  }
+  .knob-value {
+    font-size: 14px;
+  }
+  .btn-shoot {
+    width: 64px;
+    height: 64px;
+    font-size: 14px;
+  }
+  .card-holder {
+    top: calc(70px + var(--safe-t));
+    right: calc(8px + var(--safe-r));
+  }
+  [data-footed='left'] .card-holder {
+    top: calc(60px + var(--safe-t));
+    left: calc(8px + var(--safe-l));
+  }
+  .shot-card {
+    width: 280px;
+    max-height: calc(100vh - 78px - var(--safe-t) - var(--safe-b));
+    padding: 10px 14px;
+  }
+  .card-result {
+    font-size: 20px;
+    margin-bottom: 4px;
+  }
+  .card-data {
+    gap: 2px 10px;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+  .card-actions > button {
+    min-height: 44px;
+  }
+  .timing {
+    top: calc(58px + var(--safe-t));
+    width: 200px;
+  }
 }
 
 /* ---------- Replay ---------- */
@@ -826,9 +1106,9 @@ input:focus-visible,
 
 .replay-bar {
   position: absolute;
-  top: 12px;
-  left: 12px;
-  right: 12px;
+  top: calc(12px + var(--safe-t));
+  left: calc(12px + var(--safe-l));
+  right: calc(12px + var(--safe-r));
   display: flex;
   align-items: center;
   gap: 12px;
@@ -853,9 +1133,9 @@ input:focus-visible,
 
 .replay-panel {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
-  width: 380px;
+  right: calc(12px + var(--safe-r));
+  bottom: calc(12px + var(--safe-b));
+  width: min(380px, 50vw);
   padding: 14px;
   border-radius: var(--radius);
   background: var(--panel);
@@ -1104,56 +1384,6 @@ input:focus-visible,
 @media (orientation: portrait) {
   .rotate-prompt {
     display: flex;
-  }
-}
-
-/* ---------- Short landscape screens (phones) ---------- */
-@media (max-height: 560px) {
-  .hud-logo {
-    width: 60px;
-    height: 60px;
-  }
-  .hud-top {
-    right: 80px;
-  }
-  .hud-side {
-    top: 62px;
-    width: 220px;
-    padding: 8px;
-    gap: 6px;
-  }
-  .minimap {
-    height: 90px;
-  }
-  .hint {
-    font-size: 14px;
-    padding: 6px 10px;
-  }
-  .last-intent {
-    display: none;
-  }
-  .dial-power {
-    width: 200px;
-  }
-  .knob {
-    width: 104px;
-  }
-  .btn-shoot {
-    width: 80px;
-    height: 80px;
-  }
-  .dial-aim {
-    bottom: 160px;
-  }
-  .card-holder {
-    top: 64px;
-  }
-  .shot-card {
-    padding: 10px 14px;
-  }
-  .card-data {
-    gap: 2px 10px;
-    font-size: 14px;
   }
 }
 

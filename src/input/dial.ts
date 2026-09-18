@@ -5,7 +5,7 @@
 // Keyboard: Space = Shoot (hold for the run-up), arrows move the reticle (Shift = 0.5 m steps).
 import type { InputContext, InputScheme, KickIntent, Settings } from '../contracts';
 import { trackPointer } from './pointer';
-import { gesturePlan, type GesturePlan } from './runUp';
+import { extras, gesturePlan, releaseAllowed, type GesturePlan } from './runUp';
 
 export interface KnobSpec {
   min: number;
@@ -147,7 +147,7 @@ export function createDialScheme(initial?: Partial<DialState>): DialScheme {
       const mark = el('div', 'power-mark');
       bar.append(fill, mark);
       const powerOut = el('div', 'dial-value', { 'data-testid': 'dial-power-value' });
-      powerBox.append(powerLabel, bar, powerOut);
+      powerBox.append(powerLabel, bar, powerOut, aimOut);
 
       // Knobs.
       const makeKnob = (id: string, name: string, spec: KnobSpec, get: () => number, set: (v: number) => void) => {
@@ -218,8 +218,10 @@ export function createDialScheme(initial?: Partial<DialState>): DialScheme {
 
       const shoot = el('button', 'btn-shoot', { 'data-testid': 'btn-shoot', type: 'button' }, 'Shoot');
       const panel = el('div', 'dial-panel');
-      panel.append(powerBox, knobs, shoot);
-      ui.append(ret, aimOut, panel);
+      const knobsRow = el('div', 'dial-knobs-row');
+      knobsRow.append(knobs, shoot);
+      panel.append(powerBox, knobsRow);
+      ui.append(ret, panel);
       host.append(ui);
 
       const emitPreview = (): void => ctx.preview({ intent: dialIntent(state, 'strike', ctx.now()) });
@@ -236,8 +238,15 @@ export function createDialScheme(initial?: Partial<DialState>): DialScheme {
           k.value.textContent = `${fmt(v)} rev/s`;
           k.box.setAttribute('aria-valuenow', String(v));
         }
-        curve.label.textContent = `Curve · ${curveLabel(state.sideSpin, ctx.settings().footed)}`;
-        dip.label.textContent = `Dip · ${dipLabel(state.topSpin)}`;
+        // Main label + a detail part that compact layouts hide (full text stays in the DOM).
+        const setLabel = (n: HTMLElement, text: string): void => {
+          const i = text.indexOf(' · ', text.indexOf(' · ') + 3);
+          const extra = el('span', 'knob-extra', {}, i < 0 ? '' : text.slice(i));
+          n.replaceChildren(i < 0 ? text : text.slice(0, i), extra);
+          n.title = text;
+        };
+        setLabel(curve.label, `Curve · ${curveLabel(state.sideSpin, ctx.settings().footed)}`);
+        setLabel(dip.label, `Dip · ${dipLabel(state.topSpin)}`);
         aimOut.textContent = `Aim x ${fmt(state.target.x, 2)} m · height ${state.target.y.toFixed(2)} m`;
         emitPreview();
       };
@@ -270,12 +279,14 @@ export function createDialScheme(initial?: Partial<DialState>): DialScheme {
 
       // Power bar: hold = oscillate, release = set; quick tap = tapped value.
       let tap = { t: 0, x: 0, moved: false };
+      let powerBefore = state.power;
       cleanup.push(
         trackPointer(
           bar,
           {
             down(s) {
               powerHold = { t0: s.t };
+              powerBefore = state.power;
               tap = { t: s.t, x: s.x, moved: false };
               state.power = 0;
               refresh();
@@ -296,7 +307,10 @@ export function createDialScheme(initial?: Partial<DialState>): DialScheme {
               refresh();
             },
             cancel() {
+              // Interrupted press (system gesture, palm): keep the power the player had set.
               powerHold = null;
+              state.power = powerBefore;
+              refresh();
             },
           },
           { clock: () => performance.now() },
@@ -315,31 +329,51 @@ export function createDialScheme(initial?: Partial<DialState>): DialScheme {
       bar.addEventListener('keydown', onBarKey);
 
       // Shoot: press (run-up where the mode has one), release = strike / push.
+      const ex = extras(ctx);
       let plan: GesturePlan | null = null;
+      let modeAtDown = ctx.mode();
+      let ranUp = false;
       const press = (): void => {
-        plan = gesturePlan(ctx.mode(), ctx.phase());
+        if (plan) return;
+        modeAtDown = ctx.mode();
+        plan = gesturePlan(modeAtDown, ctx.phase());
         if (!plan) return;
         shoot.classList.add('is-held');
+        ex.gesture?.(true);
+        ranUp = plan.runUp;
         if (plan.runUp) ctx.startRunUp();
       };
-      const release = (): void => {
-        shoot.classList.remove('is-held');
-        if (!plan) return;
-        const p = plan;
+      const finish = (): { plan: GesturePlan | null; ranUp: boolean } => {
+        const out = { plan, ranUp };
         plan = null;
+        ranUp = false;
+        shoot.classList.remove('is-held');
+        ex.gesture?.(false);
+        return out;
+      };
+      const release = (): void => {
+        if (!plan) return;
+        const f = finish();
+        const p = f.plan as GesturePlan;
+        if (!releaseAllowed(p, modeAtDown, ctx.mode(), ctx.phase())) {
+          if (f.ranUp) ex.cancelRunUp?.();
+          return;
+        }
         ctx.preview(null);
         ctx.emitIntent(dialIntent(state, p.kind, ctx.now()));
+      };
+      const abort = (): void => {
+        if (!plan) return;
+        if (finish().ranUp) ex.cancelRunUp?.();
       };
       cleanup.push(
         trackPointer(shoot, {
           down: () => press(),
           up: () => release(),
-          cancel() {
-            plan = null;
-            shoot.classList.remove('is-held');
-          },
+          cancel: () => abort(),
         }),
       );
+      cleanup.push(() => abort());
       const typing = (t: EventTarget | null): boolean =>
         t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA');
       const onKeyDown = (ev: KeyboardEvent): void => {

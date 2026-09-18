@@ -20,6 +20,7 @@ import type { Core, ScreenHandle, ScreenName, View } from './core';
 import { h } from './dom';
 import { mountPlay } from './hud';
 import { createFallbackProjector, type Projector } from './projector';
+import { createPreviewCache, previewKey } from './preview';
 import { mountReplay } from './replay';
 import { mountSettings } from './settings';
 import { mountStats } from './stats';
@@ -103,6 +104,7 @@ export function createApp(root: HTMLElement, deps: AppDeps): App {
   let previewIntent: KickIntent | null = null;
   let previewDirty = false;
   let previewShown = false;
+  const previewCache = createPreviewCache();
   const clearAimPreview = (): void => {
     scene?.setAimPreview(null);
     core.ui.aimPreview = null;
@@ -115,15 +117,21 @@ export function createApp(root: HTMLElement, deps: AppDeps): App {
       return;
     }
     if (!previewDirty && previewShown) return;
+    const intent = previewIntent;
+    const st = sim.state;
+    const key = previewKey(
+      intent,
+      `${st.mode}|${st.spotKey}|${st.ballStart.x},${st.ballStart.z}|${settings.altitude}|${settings.footed}`,
+    );
+    const pts = previewCache.get(key, () => sim.previewPath(intent), performance.now());
+    if (pts === undefined) return; // throttled: stays dirty, retried next frame
     previewDirty = false;
-    const pts = sim.previewPath(previewIntent);
     core.ui.aimPreview = pts.length > 1 ? pts : null;
     scene?.setAimPreview(core.ui.aimPreview);
     previewShown = true;
   };
 
   const ghostPath = (): Vec3[] | null => log.get(sim.state.spotKey)?.best?.path ?? null;
-  let resultGhost: Vec3[] | null = null;
   let flightPath: Vec3[] = [];
   let trailTick = 0;
 
@@ -135,13 +143,16 @@ export function createApp(root: HTMLElement, deps: AppDeps): App {
       previewDirty = true;
     }
   };
+  let ownRunUp = false;
   const resetShotUi = (): void => {
+    ownRunUp = false;
+    core.ui.gesture = false;
     core.ui.runUp = null;
     core.ui.pendingCard = null;
     core.ui.lastTimingErrMs = null;
     core.ui.swipePath = null;
     flightPath = [];
-    resultGhost = null;
+    core.ui.resultGhost = null;
   };
 
   let current: ScreenName = 'title';
@@ -196,6 +207,7 @@ export function createApp(root: HTMLElement, deps: AppDeps): App {
         sim.state.mode === 'penalty' && core.ui.disguise && i.kind === 'strike' ? { ...i, disguise: true } : i;
       core.ui.lastIntent = intent;
       core.ui.runUp = null;
+      ownRunUp = false;
       debugHook()?.intents.push(intent);
       clearAimPreview();
       sim.applyIntent(intent);
@@ -205,6 +217,13 @@ export function createApp(root: HTMLElement, deps: AppDeps): App {
       const startMs = sim.state.time * 1000;
       const contact = sim.startRunUp();
       core.ui.runUp = { startMs, contactMs: contact * 1000 };
+      ownRunUp = true;
+    },
+    cancelRunUp() {
+      // Only undo a run-up this UI started (the long-shot run after a push belongs to the sim).
+      if (ownRunUp) sim.cancelRunUp();
+      ownRunUp = false;
+      core.ui.runUp = null;
     },
     preview(p: InputPreview | null) {
       core.ui.swipePath = p?.swipePath ?? null;
@@ -219,7 +238,7 @@ export function createApp(root: HTMLElement, deps: AppDeps): App {
     },
     refreshTrail() {
       if (!scene) return;
-      if (core.ui.pendingCard) scene.setTrail(core.ui.pendingCard.path, resultGhost);
+      if (core.ui.pendingCard) scene.setTrail(core.ui.pendingCard.path, core.ui.resultGhost);
       else scene.setTrail(null, ghostPath());
     },
     ui: {
@@ -227,6 +246,9 @@ export function createApp(root: HTMLElement, deps: AppDeps): App {
       runUp: null,
       lastIntent: null,
       lastTimingErrMs: null,
+      lastSideSpin: null,
+      resultGhost: null,
+      gesture: false,
       pendingCard: null,
       swipePath: null,
       aimPreview: null,
@@ -246,6 +268,7 @@ export function createApp(root: HTMLElement, deps: AppDeps): App {
         audio.play('kick', Math.min(1, e.launch.speed / 32));
         core.ui.runUp = null;
         core.ui.lastTimingErrMs = sim.state.mode === 'freeKick' ? null : e.timingErrorMs;
+        core.ui.lastSideSpin = e.launch.sideSpin;
         flightPath = [];
         clearAimPreview();
         break;
@@ -261,10 +284,10 @@ export function createApp(root: HTMLElement, deps: AppDeps): App {
         audio.play('save', 1);
         break;
       case 'result': {
-        resultGhost = log.get(e.summary.spotKey)?.best?.path ?? null;
+        core.ui.resultGhost = log.get(e.summary.spotKey)?.best?.path ?? null;
         log.record(e.summary);
         core.ui.pendingCard = e.summary;
-        scene?.setTrail(e.summary.path, resultGhost);
+        scene?.setTrail(e.summary.path, core.ui.resultGhost);
         audio.play('crowd', e.summary.result === 'goal' ? 1 : 0.35);
         break;
       }
@@ -287,6 +310,7 @@ export function createApp(root: HTMLElement, deps: AppDeps): App {
   function mount(screen: ScreenName): void {
     handle?.destroy();
     handle?.el.remove();
+    core.ui.gesture = false;
     current = screen;
     root.dataset.screen = screen;
     if (screen === 'play') {
@@ -336,8 +360,14 @@ export function createApp(root: HTMLElement, deps: AppDeps): App {
       }
       updatePreview();
     }
-    const rendered = handle?.frame?.(dt) === true;
-    if (!rendered && scene) scene.render(sim.state.world, dt);
+    if (current === 'replay') {
+      // The replay screen renders recorded frames itself.
+      if (handle?.frame?.(dt) !== true) scene?.render(sim.state.world, dt);
+    } else {
+      // Render first so the HUD projects the ball/reticle with this frame's camera.
+      scene?.render(sim.state.world, dt);
+      handle?.frame?.(dt);
+    }
     raf = requestAnimationFrame(loop);
   };
 
@@ -348,17 +378,20 @@ export function createApp(root: HTMLElement, deps: AppDeps): App {
   listen('resize', onResize);
   onResize();
 
-  // --- First gesture: unlock audio; on touch devices go fullscreen + lock landscape. ---
-  let unlocked = false;
-  const firstGesture = (): void => {
-    if (unlocked) return;
-    unlocked = true;
+  // --- User gestures: unlock/resume audio on every activation-type event (unlock is idempotent and
+  // resumes a suspended context); on touch devices try fullscreen + landscape once, on a real activation.
+  let triedLandscape = false;
+  const onGesture = (ev: Event): void => {
     audio.unlock();
     audio.setEnabled(settings.sound);
-    void enterLandscape();
+    const activation =
+      ev.type === 'pointerup' || ev.type === 'touchend' || ev.type === 'click' || ev.type === 'keydown';
+    if (!triedLandscape && activation && ev.isTrusted && isCoarsePointer()) {
+      triedLandscape = true;
+      void enterLandscape();
+    }
   };
-  listen('pointerdown', firstGesture, { capture: true });
-  listen('keydown', firstGesture, { capture: true });
+  for (const t of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) listen(t, onGesture, { capture: true });
 
   mount('title');
   raf = requestAnimationFrame(loop);
@@ -376,10 +409,17 @@ export function createApp(root: HTMLElement, deps: AppDeps): App {
 }
 
 /** Fullscreen + landscape lock where supported; every failure is expected and ignored. */
+function isCoarsePointer(): boolean {
+  try {
+    return window.matchMedia?.('(pointer: coarse)').matches ?? false;
+  } catch {
+    return false;
+  }
+}
+
 async function enterLandscape(): Promise<void> {
   try {
-    const coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
-    if (!coarse || navigator.webdriver || !document.fullscreenEnabled || document.fullscreenElement) return;
+    if (navigator.webdriver || !document.fullscreenEnabled || document.fullscreenElement) return;
     await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
     const o = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
     await o.lock?.('landscape');

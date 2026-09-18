@@ -134,53 +134,186 @@ test('free kick spot presets and mini-map drag call the sim', async ({ page }) =
   expect(placed.x).toBeGreaterThan(0);
 });
 
-for (const size of [
-  { width: 1280, height: 800 },
-  { width: 1920, height: 1200 },
-]) {
-  test(`HUD controls keep Talilei's bottom-left corner free at ${size.width}×${size.height}`, async ({ page }) => {
-    await page.setViewportSize(size);
-    for (const scheme of ['dial', 'swipe'] as const) {
+interface Box {
+  id: string;
+  interactive: boolean;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+const intersects = (
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number },
+) => a.w > 0 && b.w > 0 && a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+async function seed(page: Page, s: { controlScheme: 'swipe' | 'dial'; footed: 'right' | 'left' }): Promise<void> {
+  await page.addInitScript((v) => {
+    localStorage.setItem('lt26.settings.v1', JSON.stringify({ altitude: 'nairobi', sound: false, ...v }));
+  }, s);
+}
+
+/** Ball screen position once the kick camera has settled (two reads a second apart agree). */
+async function stableBall(page: Page): Promise<{ x: number; y: number; r: number }> {
+  const layer = page.getByTestId('input-layer');
+  const read = () =>
+    layer.evaluate((el: HTMLElement) => ({
+      x: Number(el.dataset.ballX),
+      y: Number(el.dataset.ballY),
+      r: Number(el.dataset.ballR),
+      w: innerWidth,
+      h: innerHeight,
+      t: (window as unknown as { __lt26: { sim: { state: { time: number } } } }).__lt26.sim.state.time,
+    }));
+  let prev = '';
+  let same = 0;
+  let cur = await read();
+  await expect
+    .poll(
+      async () => {
+        await page.waitForTimeout(1000);
+        const last = cur;
+        cur = await read();
+        // Stable = same position across two reads with at least one animation frame between them
+        // (sim time advanced), twice in a row. Frames can take seconds under SwiftShader.
+        const key = `${cur.x},${cur.y},${cur.r}`;
+        same = key === prev && cur.t > last.t ? same + 1 : key === prev ? same : 0;
+        prev = key;
+        return same >= 2 && cur.x > 0 && cur.x < cur.w && cur.y > 0 && cur.y < cur.h;
+      },
+      { timeout: 60_000 },
+    )
+    .toBe(true);
+  return cur;
+}
+
+const hudBoxes = (page: Page): Promise<Box[]> =>
+  page.evaluate(() => {
+    const sel = [
+      '[data-testid="hud"] button',
+      '[data-testid="hud"] [role="slider"]',
+      '.hud-nav',
+      '.hint',
+      '.hud-logo',
+      '.hud-side',
+      '.dial-panel',
+      '.card-holder',
+    ].join(', ');
+    return [...document.querySelectorAll<HTMLElement>(sel)]
+      .filter((e) => e.offsetParent !== null && getComputedStyle(e).visibility !== 'hidden')
+      .map((e) => {
+        const r = e.getBoundingClientRect();
+        const interactive = e.tagName === 'BUTTON' || e.getAttribute('role') === 'slider';
+        return { id: e.dataset.testid ?? e.className, interactive, x: r.x, y: r.y, w: r.width, h: r.height };
+      });
+  });
+
+/** The containers that must not overlap each other. */
+const CONTAINERS = ['hud-nav', 'hint', 'hud-logo', 'hud-side', 'dial-panel', 'card-holder'];
+
+const LAYOUTS: { width: number; height: number; footed: 'right' | 'left' }[] = [
+  { width: 1280, height: 800, footed: 'right' },
+  { width: 1280, height: 800, footed: 'left' },
+  { width: 1920, height: 1200, footed: 'right' },
+  { width: 1920, height: 1200, footed: 'left' },
+  { width: 1024, height: 600, footed: 'right' },
+  { width: 1024, height: 600, footed: 'left' },
+  { width: 800, height: 500, footed: 'right' },
+  { width: 740, height: 360, footed: 'right' },
+  { width: 740, height: 360, footed: 'left' },
+];
+
+for (const L of LAYOUTS) {
+  for (const scheme of ['dial', 'swipe'] as const) {
+    test(`HUD layout ${L.width}×${L.height} ${L.footed}-footed ${scheme}: Talilei's corner, the ball and the panels stay clear`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: L.width, height: L.height });
+      await seed(page, { controlScheme: scheme, footed: L.footed });
       await page.goto('./');
-      await page.evaluate((s) => {
-        localStorage.setItem(
-          'lt26.settings.v1',
-          JSON.stringify({ controlScheme: s, altitude: 'nairobi', sound: false, footed: 'right' }),
-        );
-      }, scheme);
-      await page.reload();
+      // Talilei stands beside the ball on his kicking-foot side: bottom-left for right-footers,
+      // bottom-right for left-footers (30 % × 45 % of the screen).
+      const zone = {
+        x: L.footed === 'right' ? 0 : L.width * 0.7,
+        y: L.height * 0.55,
+        w: L.width * 0.3,
+        h: L.height * 0.45,
+      };
       for (const mode of ['freeKick', 'penalty', 'longShot'] as const) {
         await page.getByTestId(`btn-mode-${mode}`).click();
         await expect(page.getByTestId('input-layer')).toHaveAttribute('data-scheme', scheme);
-        const zone = { x: 0, y: size.height * 0.55, w: size.width * 0.3, h: size.height * 0.45 };
-        const boxes = await page.evaluate(() => {
-          const sel = [
-            '[data-testid="hud"] button',
-            '[data-testid="hud"] [role="slider"]',
-            '[data-testid="hud"] .hud-side',
-            '[data-testid="hud"] .hint',
-            '[data-testid="hud"] .dial-box',
-            '[data-testid="hud"] .dial-aim',
-            '[data-testid="hud-logo"]',
-          ].join(', ');
-          return [...document.querySelectorAll<HTMLElement>(sel)]
-            .filter((e) => e.offsetParent !== null)
-            .map((e) => {
-              const r = e.getBoundingClientRect();
-              const interactive = e.tagName === 'BUTTON' || e.getAttribute('role') === 'slider';
-              return { id: e.dataset.testid ?? e.className, interactive, x: r.x, y: r.y, w: r.width, h: r.height };
-            });
-        });
-        expect(boxes.length).toBeGreaterThan(3);
-        const overlapping = boxes.filter(
-          (b) => b.w > 0 && b.x < zone.x + zone.w && b.x + b.w > zone.x && b.y < zone.y + zone.h && b.y + b.h > zone.y,
+        const ball = await stableBall(page);
+        const boxes = await hudBoxes(page);
+        const tag = `${L.width}×${L.height} ${L.footed} ${scheme} ${mode}`;
+        expect(boxes.length, tag).toBeGreaterThan(3);
+        expect(
+          boxes.filter((b) => intersects(b, zone)).map((b) => b.id),
+          `${tag}: in Talilei's corner`,
+        ).toEqual([]);
+        const r = Math.max(ball.r, 8) * 1.2;
+        const ballBox = { x: ball.x - r, y: ball.y - r, w: 2 * r, h: 2 * r };
+        expect(
+          boxes.filter((b) => intersects(b, ballBox)).map((b) => b.id),
+          `${tag}: over the ball at ${JSON.stringify(ball)}`,
+        ).toEqual([]);
+        const cont = boxes.filter((b) => CONTAINERS.some((c) => String(b.id).split(' ').includes(c)));
+        const clashes: string[] = [];
+        for (let i = 0; i < cont.length; i += 1)
+          for (let j = i + 1; j < cont.length; j += 1)
+            if (intersects(cont[i], cont[j])) clashes.push(`${cont[i].id} × ${cont[j].id}`);
+        expect(clashes, `${tag}: overlapping panels`).toEqual([]);
+        const offscreen = boxes.filter(
+          (b) => b.x < 0 || b.y < 0 || b.x + b.w > L.width + 0.5 || b.y + b.h > L.height + 0.5,
         );
-        expect(overlapping, `${scheme}/${mode}`).toEqual([]);
+        expect(
+          offscreen.map((b) => b.id),
+          `${tag}: off screen`,
+        ).toEqual([]);
         const small = boxes.filter((b) => b.interactive && (b.w < 44 || b.h < 44));
-        expect(small, `${scheme}/${mode} small targets`).toEqual([]);
+        expect(
+          small.map((b) => b.id),
+          `${tag}: small targets`,
+        ).toEqual([]);
         await page.getByTestId('btn-back').click();
       }
+    });
+  }
+}
+
+for (const L of [
+  { width: 740, height: 360, footed: 'right' as const },
+  { width: 740, height: 360, footed: 'left' as const },
+  { width: 1024, height: 600, footed: 'right' as const },
+]) {
+  test(`shot card fits with its buttons visible at ${L.width}×${L.height} (${L.footed}-footed)`, async ({ page }) => {
+    await page.setViewportSize({ width: L.width, height: L.height });
+    await seed(page, { controlScheme: 'dial', footed: L.footed });
+    await page.goto('./');
+    await page.getByTestId('btn-mode-freeKick').click();
+    await stableBall(page);
+    await page.getByTestId('btn-shoot').click();
+    const card = page.getByTestId('shot-card');
+    await expect(card).toBeVisible({ timeout: 120_000 });
+    const c = (await card.boundingBox())!;
+    expect(c.y).toBeGreaterThanOrEqual(0);
+    expect(c.y + c.height).toBeLessThanOrEqual(L.height);
+    expect(c.x).toBeGreaterThanOrEqual(0);
+    expect(c.x + c.width).toBeLessThanOrEqual(L.width);
+    for (const id of ['btn-next', 'btn-replay']) {
+      const b = (await page.getByTestId(id).boundingBox())!;
+      expect(b.y + b.height, id).toBeLessThanOrEqual(L.height);
+      expect(b.height, id).toBeGreaterThanOrEqual(44);
     }
+    // Nothing interactive sits on top of the card.
+    const boxes = await hudBoxes(page);
+    const cardBox = { x: c.x, y: c.y, w: c.width, h: c.height };
+    const under = boxes.filter(
+      (b) => !['shot-card', 'btn-next', 'btn-replay', 'card-holder'].includes(String(b.id)) && intersects(b, cardBox),
+    );
+    expect(under.map((b) => b.id)).toEqual([]);
+    await page.getByTestId('btn-next').click();
+    await expect(card).toHaveCount(0);
   });
 }
 

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import type { Vec3 } from '../../src/contracts';
 import {
+  KickAnchorTracker,
+  kickBallNdcY,
   KICK_CAMERA,
   kickCameraPose,
   pathBounds,
@@ -157,5 +159,106 @@ describe('render cameras: replay and title', () => {
   it('title view sees the goal mouth', () => {
     const cam = cameraFrom(titleCameraPose(0));
     expect(projectToScreen(cam, { x: 0, y: 1.2, z: 0 }, W, H).visible).toBe(true);
+  });
+});
+
+describe('render cameras: kick anchor tracker', () => {
+  const dt = 1 / 60;
+  const dist = (a: Vec3, b: Vec3) => Math.hypot(a.x - b.x, a.z - b.z);
+
+  function camToBall(tr: KickAnchorTracker, ball: Vec3): number {
+    const p = kickCameraPose(tr.anchor, tr.side).position;
+    return Math.hypot(p.x - ball.x, p.z - ball.z);
+  }
+
+  it('follows a long-shot push (camera stays 4–5 m from the ball) and freezes at the strike', () => {
+    const tr = new KickAnchorTracker();
+    const ball: Vec3 = { x: -5, y: 0.11, z: 27 };
+    const taker = takerLeftOf(ball);
+    for (let i = 0; i < 10; i++) tr.update(ball, taker, dt);
+    expect(dist(tr.anchor, ball)).toBeLessThan(1e-6);
+    // Push: rolls 3.5 m/s towards the goal (decelerating), taker chasing 2–4 m behind.
+    const dir = { x: 5 / Math.hypot(5, 27), z: -27 / Math.hypot(5, 27) };
+    let v = 3.5;
+    let t = { ...taker };
+    for (let i = 0; i < 90; i++) {
+      ball.x += dir.x * v * dt;
+      ball.z += dir.z * v * dt;
+      v = Math.max(1.2, v - 1.5 * dt);
+      t = { x: t.x + dir.x * 4 * dt, y: 0, z: t.z + dir.z * 4 * dt };
+      tr.update(ball, t, dt);
+      const d = camToBall(tr, ball);
+      expect(d).toBeGreaterThanOrEqual(4);
+      expect(d).toBeLessThanOrEqual(5);
+    }
+    // Strike: 25 m/s ground-ish drive, then flight; the anchor stays at the strike point.
+    const strikeSpot = { ...tr.anchor };
+    for (let i = 0; i < 60; i++) {
+      ball.z -= 25 * dt;
+      ball.y = i < 5 ? 0.15 : 0.15 + 0.05 * i;
+      tr.update(ball, t, dt);
+      expect(dist(tr.anchor, strikeSpot)).toBeLessThan(0.05);
+    }
+  });
+
+  it('never goes to a ball resting in the net after replay → back, and jumps (no swoop) on Next kick', () => {
+    const tr = new KickAnchorTracker();
+    const spot: Vec3 = { x: 4, y: 0.11, z: 22 };
+    const taker = takerLeftOf(spot);
+    tr.update(spot, taker, dt);
+    const inNet: Vec3 = { x: -2.8, y: 0.11, z: -1.5 };
+    // Flight then resting in the net.
+    for (let i = 0; i < 30; i++) tr.update({ x: 4 - 0.23 * i, y: 1, z: 22 - 0.78 * i }, taker, dt);
+    for (let i = 0; i < 30; i++) tr.update(inNet, taker, dt);
+    expect(dist(tr.anchor, spot)).toBeLessThan(1e-6);
+    // Replay → Back: snap requested while the ball is still in the net.
+    tr.requestSnap();
+    for (let i = 0; i < 30; i++) tr.update(inNet, taker, dt);
+    expect(dist(tr.anchor, spot)).toBeLessThan(1e-6);
+    // Next kick at a different spot: the ball teleports beside the (moved) taker → jump within 2 frames.
+    const next: Vec3 = { x: -8, y: 0.11, z: 25 };
+    const taker2 = takerLeftOf(next);
+    tr.update(next, taker2, dt);
+    tr.update(next, taker2, dt);
+    expect(dist(tr.anchor, next)).toBeLessThan(1e-6);
+    expect(tr.side).toBe(-1);
+  });
+
+  it('with no known spot, derives one from the taker instead of the ball', () => {
+    const tr = new KickAnchorTracker();
+    const spot: Vec3 = { x: 0, y: 0.11, z: 22 };
+    tr.update({ x: 1, y: 0.11, z: -1.5 }, takerLeftOf(spot), dt);
+    expect(tr.valid).toBe(true);
+    expect(dist(tr.anchor, spot)).toBeLessThan(0.05);
+  });
+
+  it('glides for small spot adjustments while resting beside the taker', () => {
+    const tr = new KickAnchorTracker();
+    const a: Vec3 = { x: 0, y: 0.11, z: 22 };
+    tr.update(a, takerLeftOf(a), dt);
+    const b: Vec3 = { x: 1, y: 0.11, z: 22 };
+    tr.update(b, takerLeftOf(b), dt);
+    tr.update(b, takerLeftOf(b), dt);
+    expect(tr.anchor.x).toBeGreaterThan(0);
+    expect(tr.anchor.x).toBeLessThan(0.5);
+    for (let i = 0; i < 120; i++) tr.update(b, takerLeftOf(b), dt);
+    expect(tr.anchor.x).toBeCloseTo(1, 3);
+  });
+});
+
+describe('render cameras: short screens', () => {
+  it('keeps the 1280×800 framing and raises the ball on short viewports', () => {
+    expect(kickBallNdcY(800)).toBe(KICK_CAMERA.ballNdcY);
+    expect(kickBallNdcY(500)).toBeGreaterThan(KICK_CAMERA.ballNdcY);
+    expect(kickBallNdcY(300)).toBe(-0.4);
+    for (const h of [360, 500, 600]) {
+      const ndc = kickBallNdcY(h);
+      expect(((1 + ndc) / 2) * h).toBeGreaterThanOrEqual(Math.min(140, 0.3 * h) - 1e-9);
+      const ball = { x: 4, y: 0.11, z: 22 };
+      const cam = cameraFrom(kickCameraPose(ball, -1, ndc), 800 / h);
+      const bar = projectToScreen(cam, { x: 0, y: 2.44, z: 0 }, 800, h);
+      expect(bar.visible).toBe(true);
+      expect(bar.y / h).toBeLessThan(0.3);
+    }
   });
 });

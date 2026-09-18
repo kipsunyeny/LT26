@@ -53,18 +53,23 @@ async function ball(page: Page): Promise<{ x: number; y: number; r: number }> {
       r: Number(el.dataset.ballR),
       w: window.innerWidth,
       h: window.innerHeight,
+      t: (window as unknown as { __lt26: { sim: { state: { time: number } } } }).__lt26.sim.state.time,
     }));
   let prev = '';
+  let same = 0;
   let cur = await read();
   await expect
     .poll(
       async () => {
         await page.waitForTimeout(1000);
+        const last = cur;
         cur = await read();
-        const key = JSON.stringify(cur);
-        const ok = key === prev && cur.x > 0 && cur.x < cur.w && cur.y > 0 && cur.y < cur.h;
+        // Stable = same position across two reads with at least one animation frame between them
+        // (sim time advanced), twice in a row. Frames can take seconds under SwiftShader.
+        const key = `${cur.x},${cur.y},${cur.r}`;
+        same = key === prev && cur.t > last.t ? same + 1 : key === prev ? same : 0;
         prev = key;
-        return ok;
+        return same >= 2 && cur.x > 0 && cur.x < cur.w && cur.y > 0 && cur.y < cur.h;
       },
       { timeout: 60_000 },
     )
@@ -200,6 +205,57 @@ test.describe('swipe scheme', () => {
     expect(await page.evaluate(() => (window as unknown as { __runUps: number }).__runUps)).toBe(1);
     expect(i.kind).toBe('strike');
     expect(i.disguise).toBe(true);
+  });
+
+  test('penalty: a tap on the ball (no swipe) cancels the run-up it started and emits nothing', async ({ page }) => {
+    await open(page, 'swipe', 'penalty');
+    await page.evaluate(() => {
+      const w = window as unknown as { __cancels: number; __lt26: { sim: { cancelRunUp(): void } } };
+      w.__cancels = 0;
+      const sim = w.__lt26.sim;
+      const orig = sim.cancelRunUp.bind(sim);
+      sim.cancelRunUp = () => {
+        w.__cancels += 1;
+        orig();
+      };
+    });
+    const b = await ball(page);
+    const cdp = await touchSession(page);
+    await touchSwipe(page, cdp, [b, { x: b.x + 2, y: b.y - 3 }], 0, 200);
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __cancels: number }).__cancels)).toBe(1);
+    expect(await intents(page)).toEqual([]);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as unknown as { __lt26: { sim: { state: { phase: string } } } }).__lt26.sim.state.phase,
+        ),
+      )
+      .toBe('aiming');
+    await expect(page.getByTestId('timing')).toBeHidden();
+  });
+
+  test('long shot: after the push, a tap on the rolling ball strikes it (no spin, goal centre)', async ({ page }) => {
+    await open(page, 'swipe', 'longShot');
+    const b = await ball(page);
+    const cdp = await touchSession(page);
+    await touchSwipe(page, cdp, swipePoints(b.x, b.y, 150, 0, 6), 0, 0, 30);
+    await expect.poll(async () => (await intents(page)).length).toBe(1);
+    const phase = () =>
+      page.evaluate(
+        () => (window as unknown as { __lt26: { sim: { state: { phase: string } } } }).__lt26.sim.state.phase,
+      );
+    await expect.poll(phase, { timeout: 60_000 }).toMatch(/pushed|runUp/);
+    const p = await page.getByTestId('input-layer').evaluate((el: HTMLElement) => ({
+      x: Number(el.dataset.ballX),
+      y: Number(el.dataset.ballY),
+    }));
+    await touchSwipe(page, cdp, [p, { x: p.x + 1, y: p.y }], 0);
+    await expect.poll(async () => (await intents(page)).length).toBe(2);
+    const i = (await intents(page))[1];
+    expect(i.kind).toBe('strike');
+    expect(i.sideSpin).toBe(0);
+    expect(i.topSpin).toBe(0);
+    expect(i.aim.kind).toBe('angles');
   });
 
   test('long shot: the first swipe is a push', async ({ page }) => {

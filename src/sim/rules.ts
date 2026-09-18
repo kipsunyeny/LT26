@@ -55,6 +55,8 @@ export class ShotJudge {
   private keeperTouched = false;
   private wallTouched = false;
   private firstBlockT: number | null = null;
+  private keeperT: number | null = null;
+  private wallT: number | null = null;
   private apex: number;
   private lateral = 0;
   private freeFlight = true;
@@ -68,6 +70,8 @@ export class ShotJudge {
     readonly mode: Mode,
     readonly spotKey: string,
     readonly launch: LaunchParams,
+    /** Where the ball would have crossed z = 0 in free flight (no players, no frame), or null. */
+    readonly predicted: { x: number; y: number } | null = null,
   ) {
     this.apex = launch.origin.y;
     this.closest = mouthDistance3(launch.origin);
@@ -83,8 +87,13 @@ export class ShotJudge {
       if (c.tag === 'ground' || c.tag === 'net') continue;
       if (this.firstBlockT === null) this.firstBlockT = c.t;
       if (c.tag === 'post' || c.tag === 'bar') this.frameTag = this.frameTag ?? c.tag;
-      else if (c.tag === 'keeperHand' || c.tag === 'keeperBody') this.keeperTouched = true;
-      else if (c.tag === 'wall' || c.tag === 'defender') this.wallTouched = true;
+      else if (c.tag === 'keeperHand' || c.tag === 'keeperBody') {
+        this.keeperTouched = true;
+        this.keeperT = this.keeperT ?? c.t;
+      } else if (c.tag === 'wall' || c.tag === 'defender') {
+        this.wallTouched = true;
+        this.wallT = this.wallT ?? c.t;
+      }
     }
     if (this.freeFlight && this.firstBlockT === null && !this.crossing) {
       this.apex = Math.max(this.apex, next.p.y);
@@ -135,8 +144,16 @@ export class ShotJudge {
     const d = this.decision ?? { result: 'miss' as ShotResult, t: SHOT_TIMEOUT };
     const crossing = this.crossing ? { x: this.crossing.x, y: this.crossing.y } : null;
     let miss = 0;
-    if (d.result !== 'goal') miss = crossing ? mouthDistance(crossing.x, crossing.y) : this.closest;
-    const timeToGoalS = this.crossing ? this.crossing.t : (this.firstBlockT ?? d.t);
+    const blocked = this.firstBlockT !== null && (!this.crossing || this.firstBlockT <= this.crossing.t);
+    if (d.result !== 'goal') {
+      if (blocked && this.predicted) miss = mouthDistance(this.predicted.x, this.predicted.y);
+      else if (crossing) miss = mouthDistance(crossing.x, crossing.y);
+      else miss = this.closest;
+    }
+    let timeToGoalS: number;
+    if ((d.result === 'saved' || d.result === 'caught') && this.keeperT !== null) timeToGoalS = this.keeperT;
+    else if (d.result === 'wall' && this.wallT !== null) timeToGoalS = this.wallT;
+    else timeToGoalS = this.crossing ? this.crossing.t : (this.firstBlockT ?? d.t);
     return {
       mode: this.mode,
       spotKey: this.spotKey,

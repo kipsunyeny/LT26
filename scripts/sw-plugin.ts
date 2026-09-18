@@ -71,10 +71,8 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-self.addEventListener('message', (event) => {
-  if (event.data === 'skipWaiting') self.skipWaiting();
-});
-
+// No skipWaiting(): a new version waits until every window of the app is closed, so a running game is
+// never switched to a cache that lacks the hashed files it was loaded with.
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;

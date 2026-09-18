@@ -38,7 +38,8 @@ class FakeNode {
 class FakeContext {
   static starts = 0;
   static instances = 0;
-  state: 'suspended' | 'running' = 'suspended';
+  static resumes = 0;
+  state: 'suspended' | 'running' | 'interrupted' = 'suspended';
   sampleRate = 8000;
   currentTime = 0;
   destination = new FakeNode();
@@ -46,6 +47,7 @@ class FakeContext {
     FakeContext.instances++;
   }
   resume() {
+    FakeContext.resumes++;
     this.state = 'running';
     return Promise.resolve();
   }
@@ -132,5 +134,56 @@ describe('audio', () => {
       a.unlock();
       a.play('whistle');
     }).not.toThrow();
+  });
+
+  it('unlock is idempotent and resumes a suspended context every time', async () => {
+    FakeContext.instances = 0;
+    FakeContext.resumes = 0;
+    const doc = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    vi.stubGlobal('document', doc);
+    vi.stubGlobal('window', { AudioContext: FakeContext });
+    const a = createAudio();
+    a.unlock();
+    a.unlock();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(FakeContext.instances).toBe(1);
+    expect(FakeContext.resumes).toBe(1);
+    a.unlock(); // already running: nothing to do
+    expect(FakeContext.resumes).toBe(1);
+    const started = FakeContext.starts;
+    a.play('kick');
+    expect(FakeContext.starts).toBeGreaterThan(started);
+  });
+
+  it('resumes after an interruption on unlock and on visibilitychange → visible', async () => {
+    FakeContext.resumes = 0;
+    const doc = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    vi.stubGlobal('document', doc);
+    const created: FakeContext[] = [];
+    vi.stubGlobal('window', {
+      AudioContext: class extends FakeContext {
+        constructor() {
+          super();
+          created.push(this);
+        }
+      },
+    });
+    const a = createAudio();
+    a.unlock();
+    await Promise.resolve();
+    expect(FakeContext.resumes).toBe(1);
+    expect(created).toHaveLength(1);
+    const c = created[0];
+    c.state = 'interrupted';
+    a.unlock();
+    await Promise.resolve();
+    expect(FakeContext.resumes).toBe(2);
+    expect(c.state).toBe('running');
+    c.state = 'suspended';
+    doc.dispatchEvent(new Event('visibilitychange'));
+    await Promise.resolve();
+    expect(FakeContext.resumes).toBe(3);
+    expect(c.state).toBe('running');
   });
 });

@@ -12,10 +12,19 @@
 //                (top = driven, low, top spin; bottom = lofted, back spin).
 import type { InputScheme, KickIntent, PointerSample, Vec3 } from '../contracts';
 import { trackPointer } from './pointer';
-import { gesturePlan, type GesturePlan } from './runUp';
+import { extras, gesturePlan, releaseAllowed, type GesturePlan } from './runUp';
 
+/** CSS reference pixel density (desktop monitors, mouse). */
 export const CSS_PX_PER_INCH = 96;
+/** Touch tablets/phones lay out more CSS px per physical inch (tablets ≈132–160): used on coarse pointers. */
+export const CSS_PX_PER_INCH_COARSE = 150;
 export const CSS_PX_PER_METRE = CSS_PX_PER_INCH / 0.0254;
+export const CSS_PX_PER_METRE_COARSE = CSS_PX_PER_INCH_COARSE / 0.0254;
+
+/** CSS px per metre of finger travel for a fine (mouse) or coarse (touch) primary pointer. */
+export function pxPerMetreFor(coarse: boolean): number {
+  return coarse ? CSS_PX_PER_METRE_COARSE : CSS_PX_PER_METRE;
+}
 export const FINGER_MIN_MPS = 0.3;
 export const FINGER_MAX_MPS = 2.5;
 /** Exponent of the ease-in power curve (power = f^k, f = normalised finger speed). */
@@ -29,8 +38,10 @@ export const CURVE_DEAD = 0.01;
 /** Curvature giving full side spin: a circular arc whose sagitta is ≈18 % of its chord. */
 export const CURVE_FULL = 0.12;
 export const MAX_SIDE_SPIN = 10;
-/** Start-on-ball offsets inside this band (fraction of the radius) give no top/back spin. */
-export const CONTACT_DEAD = 0.15;
+/** Start offsets within ±this many CSS px of the ball centre count as a centre contact. */
+export const CONTACT_DEAD_PX = 10;
+/** The top/bottom of the ball is read over at least ±40 CSS px (small balls are hard to hit exactly). */
+export const CONTACT_BAND_MIN_PX = 40;
 export const MAX_TOP_SPIN = 5;
 export const MAX_BACK_SPIN = 5;
 /** Launch elevation for a top / centre / bottom contact, degrees. */
@@ -138,9 +149,17 @@ export function sideSpinFromPath(path: readonly ScreenPoint[]): number {
   return mag === 0 ? 0 : -Math.sign(k) * MAX_SIDE_SPIN * mag;
 }
 
+/** Half-height (CSS px) of the band read as top…bottom of the ball: max(40 px, the 2.2 r ring). */
+export function contactBandPx(ballR: number): number {
+  return Math.max(CONTACT_BAND_MIN_PX, 2.2 * ballR);
+}
+
 /** Vertical contact on the ball from the swipe start: −1 = top, 0 = centre, +1 = bottom. */
 export function contactFromStart(start: ScreenPoint, ball: { x: number; y: number; r: number }): number {
-  return clamp((start.y - ball.y) / Math.max(ball.r, 1), -1, 1);
+  const dy = start.y - ball.y;
+  const band = contactBandPx(ball.r);
+  const m = clamp((Math.abs(dy) - CONTACT_DEAD_PX) / (band - CONTACT_DEAD_PX), 0, 1);
+  return m === 0 ? 0 : Math.sign(dy) * m;
 }
 
 /** Launch elevation (rad) for a contact offset. */
@@ -156,9 +175,8 @@ export function elevationFromContact(o: number): number {
 /** Top (+) / back (−) spin in rev/s for a contact offset: top of the ball → top spin. */
 export function topSpinFromContact(o: number): number {
   const c = clamp(o, -1, 1);
-  const m = clamp((Math.abs(c) - CONTACT_DEAD) / (1 - CONTACT_DEAD), 0, 1);
-  if (m === 0) return 0;
-  return c < 0 ? MAX_TOP_SPIN * m : -MAX_BACK_SPIN * m;
+  if (c === 0) return 0;
+  return c < 0 ? -MAX_TOP_SPIN * c : -MAX_BACK_SPIN * c;
 }
 
 /** Relative azimuth (rad) of a screen direction, 0 = straight up the screen, + = kicker's right. */
@@ -234,9 +252,32 @@ export function swipeStartRadius(ballR: number): number {
   return Math.max(4 * ballR, 120);
 }
 
+/** Long shot, ball rolling: a tap on the ball strikes it towards the goal centre with no spin. */
+export function tapStrikeIntent(basis: ScreenBasis | undefined, power: number, atMs: number): KickIntent {
+  return {
+    kind: 'strike',
+    scheme: 'swipe',
+    aim: { kind: 'angles', azimuth: (basis ?? IDENTITY_BASIS).baseAzimuth, elevation: elevationFromContact(0) },
+    power: clamp(power, 0, 1),
+    sideSpin: 0,
+    topSpin: 0,
+    atMs,
+  };
+}
+
 export interface SwipeSchemeOptions {
   /** Ball centre in world space, so the swipe direction is read on the pitch. */
   ballWorld?: () => Vec3;
+  /** Override the CSS px per inch used for finger speed (default: 150 on coarse pointers, else 96). */
+  pxPerInch?: number;
+}
+
+function coarsePointer(): boolean {
+  try {
+    return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  } catch {
+    return false;
+  }
 }
 
 export function createSwipeScheme(opts: SwipeSchemeOptions = {}): InputScheme {
@@ -245,22 +286,39 @@ export function createSwipeScheme(opts: SwipeSchemeOptions = {}): InputScheme {
     id: 'swipe',
     attach(el, ctx) {
       off?.();
+      const ex = extras(ctx);
+      const pxPerMetre = opts.pxPerInch ? opts.pxPerInch / 0.0254 : pxPerMetreFor(coarsePointer());
       let path: PointerSample[] = [];
       let plan: GesturePlan | null = null;
+      let modeAtDown = ctx.mode();
+      let ranUp = false;
       let ball = { x: 0, y: 0, r: 1 };
       let basis: ScreenBasis | undefined;
       const build = (): KickIntent | null =>
-        plan ? swipeToIntent(path, ball, { atMs: ctx.now(), kind: plan.kind, basis }) : null;
+        plan ? swipeToIntent(path, ball, { atMs: ctx.now(), kind: plan.kind, basis, pxPerMetre }) : null;
+      const end = (): void => {
+        plan = null;
+        path = [];
+        ranUp = false;
+        ctx.preview(null);
+        ex.gesture?.(false);
+      };
       off = trackPointer(el, {
         down(s) {
-          plan = gesturePlan(ctx.mode(), ctx.phase());
-          if (!plan) return false;
+          modeAtDown = ctx.mode();
+          const p = gesturePlan(modeAtDown, ctx.phase());
+          if (!p) return false;
           ball = ctx.ballScreen();
           if (Math.hypot(s.x - ball.x, s.y - ball.y) > swipeStartRadius(ball.r)) return false;
+          plan = p;
           const bw = opts.ballWorld?.();
-          basis = (bw && basisFromProjection(bw, (p) => ctx.worldToScreen(p))) || undefined;
+          basis = (bw && basisFromProjection(bw, (q) => ctx.worldToScreen(q))) || undefined;
           path = [s];
-          if (plan.runUp) ctx.startRunUp();
+          ex.gesture?.(true);
+          if (p.runUp) {
+            ctx.startRunUp();
+            ranUp = true;
+          }
           ctx.preview({ swipePath: [{ x: s.x, y: s.y }] });
           return true;
         },
@@ -272,19 +330,28 @@ export function createSwipeScheme(opts: SwipeSchemeOptions = {}): InputScheme {
         },
         up(s) {
           if (!plan) return;
+          const p = plan;
           const last = path[path.length - 1];
           // Only keep the release sample if the finger moved: a stationary lift-off would dilute the speed.
           if (Math.hypot(s.x - last.x, s.y - last.y) > 0.5) path.push(s);
-          const intent = build();
-          plan = null;
-          path = [];
-          ctx.preview(null);
+          const mode = ctx.mode();
+          let intent: KickIntent | null = null;
+          if (releaseAllowed(p, modeAtDown, mode, ctx.phase())) {
+            intent = build();
+            const moved = Math.hypot(s.x - path[0].x, s.y - path[0].y);
+            if (!intent && mode === 'longShot' && p.kind === 'strike' && moved < MIN_SWIPE_PX) {
+              intent = tapStrikeIntent(basis, ex.tapPower?.() ?? 0.7, ctx.now());
+            }
+          }
+          const hadRunUp = ranUp;
+          end();
           if (intent) ctx.emitIntent(intent);
+          else if (hadRunUp) ex.cancelRunUp?.();
         },
         cancel() {
-          plan = null;
-          path = [];
-          ctx.preview(null);
+          const hadRunUp = ranUp;
+          end();
+          if (hadRunUp) ex.cancelRunUp?.();
         },
       });
     },

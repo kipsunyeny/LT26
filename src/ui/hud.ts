@@ -2,7 +2,9 @@
 // spot presets, penalty disguise), the active control scheme on a full-screen input layer, the
 // swipe ghost arrow, the run-up timing indicator and the shot card.
 // Layout rule: the bottom-left ≈30 % × 45 % of the screen stays free (the 3D Talilei stands there).
-import type { InputContext, Mode, Phase } from '../contracts';
+import type { Mode, Phase } from '../contracts';
+import { curveLabel } from '../input/dial';
+import type { AppInputContext } from '../input/runUp';
 import { TIMING_IDEAL_POS, timingMarkerPos, timingWindowWidth } from '../input/runUp';
 import logo160 from '../../assets/brand/logo-160.webp';
 import type { Core, ScreenHandle } from './core';
@@ -37,6 +39,12 @@ const fmt = (v: number): string => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.ab
 
 export function mountPlay(core: Core): ScreenHandle {
   const { sim } = core;
+  /** Menu/tab/spot presses are ignored while a kick gesture is in progress. */
+  const guard =
+    (fn: () => void): (() => void) =>
+    () => {
+      if (!core.ui.gesture) fn();
+    };
   const layer = h('div', { class: 'input-layer', testid: 'input-layer' });
   const ring = h('div', { class: 'ball-ring', 'aria-hidden': 'true' });
 
@@ -49,15 +57,25 @@ export function mountPlay(core: Core): ScreenHandle {
 
   // Top bar.
   const tabs = MODES.map((m) => {
-    const b = button(MODE_LABEL[m], `tab-${m}`, 'tab', () => {
-      if (sim.state.mode === m) return;
-      core.setMode(m);
-      frame();
-    });
+    const b = button(
+      MODE_LABEL[m],
+      `tab-${m}`,
+      'tab',
+      guard(() => {
+        if (sim.state.mode === m) return;
+        core.setMode(m);
+        frame();
+      }),
+    );
     b.setAttribute('role', 'tab');
     return b;
   });
-  const back = button('‹ Menu', 'btn-back', 'btn-secondary btn-back', () => core.go('title'));
+  const back = button(
+    '‹ Menu',
+    'btn-back',
+    'btn-secondary btn-back',
+    guard(() => core.go('title')),
+  );
   const hint = h('div', { class: 'hint', testid: 'hint', role: 'status' });
   const lastIntent = h('div', { class: 'last-intent', testid: 'last-intent' });
   const top = h(
@@ -100,10 +118,15 @@ export function mountPlay(core: Core): ScreenHandle {
     if (spots.length > 1) {
       const grid = h('div', { class: 'spot-grid' });
       for (const s of spots) {
-        const b = button(s.short, `spot-${s.key}`, 'spot', () => {
-          core.setSpot(s.key);
-          syncPanel();
-        });
+        const b = button(
+          s.short,
+          `spot-${s.key}`,
+          'spot',
+          guard(() => {
+            core.setSpot(s.key);
+            syncPanel();
+          }),
+        );
         b.title = s.label;
         spotButtons.push(b);
         grid.append(b);
@@ -111,10 +134,15 @@ export function mountPlay(core: Core): ScreenHandle {
       side.append(grid);
     }
     if (mode === 'penalty') {
-      const b = button('Disguise: off', 'toggle-disguise', 'toggle', () => {
-        core.ui.disguise = !core.ui.disguise;
-        syncDisguise();
-      });
+      const b = button(
+        'Disguise: off',
+        'toggle-disguise',
+        'toggle',
+        guard(() => {
+          core.ui.disguise = !core.ui.disguise;
+          syncDisguise();
+        }),
+      );
       disguiseBtn = b;
       side.append(
         h('div', { class: 'panel-label' }, 'Body shape'),
@@ -161,7 +189,7 @@ export function mountPlay(core: Core): ScreenHandle {
   );
 
   // Input scheme.
-  const ctx: InputContext = {
+  const ctx: AppInputContext = {
     mode: () => sim.state.mode,
     phase: () => sim.state.phase,
     settings: () => core.settings(),
@@ -172,6 +200,11 @@ export function mountPlay(core: Core): ScreenHandle {
     emitIntent: (i) => core.emitIntent(i),
     startRunUp: () => core.startRunUp(),
     preview: (p) => core.preview(p),
+    cancelRunUp: () => core.cancelRunUp(),
+    gesture: (on) => {
+      core.ui.gesture = on;
+    },
+    tapPower: () => core.schemes.dial.state.power,
   };
   let schemeId = core.settings().controlScheme;
   let scheme = core.schemes[schemeId];
@@ -184,6 +217,7 @@ export function mountPlay(core: Core): ScreenHandle {
   let lastSpot = '';
   let lastMode: Mode | null = null;
   let cardFor: unknown = null;
+  let lastIntentKey = '';
 
   function frame(): void {
     const st = sim.state;
@@ -208,6 +242,11 @@ export function mountPlay(core: Core): ScreenHandle {
       lastPhase = st.phase;
       hint.textContent = hintFor(st.mode, st.phase, schemeId);
       el.dataset.phase = st.phase;
+    }
+    const footed = core.settings().footed;
+    if (el.dataset.footed !== footed) {
+      el.dataset.footed = footed;
+      lastIntentKey = '';
     }
     if (schemeId === 'dial') core.schemes.dial.frame();
 
@@ -255,12 +294,14 @@ export function mountPlay(core: Core): ScreenHandle {
 
     // Last input readout.
     const li = core.ui.lastIntent;
-    if (li) {
+    if (li && `${footed}` + JSON.stringify(li) !== lastIntentKey) {
+      lastIntentKey = `${footed}` + JSON.stringify(li);
       const aim =
         li.aim.kind === 'target'
           ? `aim ${fmt(li.aim.x)} m, ${li.aim.y.toFixed(1)} m`
           : `dir ${fmt((li.aim.azimuth * 180) / Math.PI)}°, lift ${((li.aim.elevation * 180) / Math.PI).toFixed(0)}°`;
-      lastIntent.textContent = `Last ${li.kind}: ${Math.round(40 + 75 * li.power)} km/h · curve ${fmt(li.sideSpin)} · dip ${fmt(li.topSpin)} rev/s · ${aim}`;
+      const foot = li.kind === 'strike' ? ` (${curveLabel(li.sideSpin, footed)})` : '';
+      lastIntent.textContent = `Last ${li.kind}: ${Math.round(40 + 75 * li.power)} km/h · curve ${fmt(li.sideSpin)}${foot} · dip ${fmt(li.topSpin)} rev/s · ${aim}`;
     }
 
     // Run-up timing.
@@ -284,6 +325,7 @@ export function mountPlay(core: Core): ScreenHandle {
           buildShotCard(
             card,
             core.ui.lastTimingErrMs,
+            core.ui.lastSideSpin === null ? null : curveLabel(core.ui.lastSideSpin, core.settings().footed),
             () => core.nextShot(),
             () => core.go('replay'),
           ),

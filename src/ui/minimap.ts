@@ -9,7 +9,15 @@ export const FK_MAX_DIST = 35;
 /** Keep the ball in front of the goal line (m). */
 export const FK_MIN_Z = 2;
 
-/** Clamp a dragged position to the legal free-kick area and round to the metre (spot keys do). */
+const validCell = (x: number, z: number): boolean => {
+  const d = Math.hypot(x, z);
+  return d >= FK_MIN_DIST && d <= FK_MAX_DIST && z >= FK_MIN_Z && Math.abs(x) <= -MM_VIEW.x;
+};
+
+/**
+ * Clamp a dragged position to the legal free-kick area, then snap to the nearest whole-metre cell
+ * that is itself legal (16–35 m from the goal centre, ≥ 2 m out, on the map): spot keys use metres.
+ */
 export function minimapPlace(x: number, z: number): { x: number; z: number } {
   let px = Math.max(MM_VIEW.x, Math.min(MM_VIEW.x + MM_VIEW.w, x));
   let pz = Math.max(FK_MIN_Z, z);
@@ -19,15 +27,21 @@ export function minimapPlace(x: number, z: number): { x: number; z: number } {
     px = (px / d) * target;
     pz = (pz / d) * target;
   }
-  let rx = Math.round(px);
-  let rz = Math.round(pz);
-  // Rounding must not push the spot back outside the ring.
-  const rd = Math.hypot(rx, rz);
-  if (rd < FK_MIN_DIST) rz += 1;
-  if (rd > FK_MAX_DIST) rz -= 1;
-  rz = Math.max(FK_MIN_Z, rz);
-  rx = Object.is(rx, -0) ? 0 : rx;
-  return { x: rx, z: rz };
+  let best: { x: number; z: number } | null = null;
+  let bestD = Infinity;
+  for (let r = 1; r <= 4 && !best; r += 1) {
+    for (let cx = Math.floor(px) - r + 1; cx <= Math.ceil(px) + r - 1; cx += 1) {
+      for (let cz = Math.floor(pz) - r + 1; cz <= Math.ceil(pz) + r - 1; cz += 1) {
+        if (!validCell(cx, cz)) continue;
+        const e = Math.hypot(cx - px, cz - pz);
+        if (e < bestD) {
+          bestD = e;
+          best = { x: cx === 0 ? 0 : cx, z: cz };
+        }
+      }
+    }
+  }
+  return best ?? { x: 0, z: FK_MIN_DIST };
 }
 
 /** Screen point → minimap metres for an SVG box (preserveAspectRatio xMidYMid meet). */
@@ -90,7 +104,7 @@ export function buildMinimap(core: Core): Minimap {
     return minimapPlace(m.x, m.z);
   };
   const onDown = (ev: PointerEvent): void => {
-    if (core.sim.state.phase === 'flight') return;
+    if (core.sim.state.phase === 'flight' || core.ui.gesture) return;
     dragging = true;
     try {
       map.setPointerCapture(ev.pointerId);

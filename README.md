@@ -9,43 +9,66 @@ It is a static web app: no server, no account, no tracking. Installed as an app 
 
 ## How to play
 
-Pick a mode on the title screen. After every kick you get a slow-motion replay with the flight path drawn, a
-shot-data card (speed, spin, curve, apex, time to goal, where it crossed the line, result), a per-spot session log
-and a "best kick" ghost for the same spot. Stats persist on the device.
+On the title screen pick **Free kick**, **Penalty** or **Long shot** (or **My stats** / **Settings**; **Install app**
+appears when the browser offers installation). In the game, the panel at the top picks the spot, a hint line at the
+bottom says what to do next, and **Back** returns to the title.
 
-| Mode           | Set-up                                                                                                                          | What to do                                                                                                                                                                   |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Free kick**  | Ball 16–35 m out (drag it on the mini-map or pick a preset: centre of the D, left/right edge of the D, wide left/right). A 3–5 man wall (red) stands at 9.15 m and jumps after the strike; the keeper (green) covers the far side. | Get the ball over or round the wall, away from the keeper, and under the bar. Side spin bends it, top spin makes it dip, back spin makes it float.                            |
-| **Penalty**    | Ball on the spot (11 m), keeper on the line. The keeper reacts after ~0.2 s and reads your body shape.                         | Hold to start the run-up, release as Talilei reaches the ball. Release timing decides how much of your power you keep. Placement wins; hard central shots at mid height get saved. |
-| **Long shot**  | Ball 20–30 m out, optionally with a defender closing you down.                                                                   | First swipe (or tap) pushes the ball forward; strike it with the second swipe as you arrive. Striking early or late costs power and accuracy. Near-zero spin at high speed = knuckle ball. |
+After every kick a shot card shows the result, ball speed, spin (labelled inside/outside of the foot for your
+kicking foot), curve, apex, time to goal and where the ball crossed the line. **Replay** plays the kick in slow
+motion (0.35×) from a side/high camera with the flight path, a side-view profile and the best earlier kick from the
+same spot as a ghost; **Next** sets up the next kick. **My stats** lists kicks, goals, goal % and average miss
+distance per spot; they are saved on the device.
 
-### Control schemes (switch in Settings)
+| Mode          | Set-up                                                                                                                                                                                                                                                                        | What to do                                                                                                                                                                                                                                                   |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Free kick** | Spot buttons: Centre of the D, Left/Right edge of the D, Wide left/right — or drag the ball on the mini-map anywhere 16–35 m out (snaps to the metre). A red wall of 3–5 players stands at 9.15 m and jumps just after the strike; the green keeper covers the far side. | One strike. Get it over or round the wall, away from the keeper and under the bar.                                                                                                                                                                           |
+| **Penalty**   | Ball on the spot (11 m), keeper on the line. The keeper reads your body shape.                                                                                                                                                                                                | The press starts Talilei's run-up; the release strikes — release as he reaches the ball. The **Disguise** toggle (Body shape panel) opens the body but strikes across it, to fool the keeper's read.                                                         |
+| **Long shot** | Spots Centre, Left, Right (20–30 m out). A defender closes you down after the push.                                                                                                                                                                                          | First gesture pushes the ball forward and it rolls; Talilei runs onto it. The second gesture strikes it — release as he reaches the ball. Swipe scheme: a tap on the rolling ball also strikes it (straight at goal, no spin, the dial's current power). |
 
-**A — Swipe** (default on touch devices). Put one finger on or near the ball and swipe towards the goal.
+**Strike timing** (penalty, long shot): releasing within ±80 ms of the ideal contact keeps full power; earlier or
+later costs up to 25 % power and adds aim scatter. The Strike timing panel shows the window. In every mode, power
+above 90 % adds random aim scatter (more at 100 %).
 
-- **Direction** of the swipe → aim left/right.
-- **Speed** of the swipe → power (≈ 40–115 km/h).
-- **Curvature** of the swipe path → side spin: a path bowed to one side bends the ball the other way round the wall.
-- **Where you start on the ball** → height and top/back spin: start near the top for a driven, dipping shot, near the
-  bottom for a lofted shot with back spin.
-- A ghost arrow shows the gesture while you swipe. With a mouse, click-drag does exactly the same.
+### Control schemes (Settings → Controls)
 
-**B — Dial** (default with a mouse). Every value is numeric and repeatable.
+**Swipe — "touch the ball and flick"** (default on touch devices). Start the swipe on or near the ball (within
+about four ball-widths) and flick towards the goal. A mouse click-drag does the same.
 
-- Drag the **reticle** anywhere on (or off) the goal face to aim.
-- Hold the **power bar**: it fills and empties; release to set power.
-- Turn the **curve** knob (−10…+10 rev/s side spin) and the **dip** knob (−6…+6 rev/s top/back spin).
-- Press **Shoot**. In penalty and long-shot mode the run-up timing still applies.
+- **Direction** of the swipe → aim. Straight up the screen aims at the centre of the goal.
+- **Speed at release** (the last moment of the flick, not the whole swipe) → power, about 40–115 km/h. A gentle
+  swipe is a soft shot; full power needs a real flick.
+- **Hook** the swipe (bow it to one side of the straight line) → side spin up to ±10 rev/s; the ball bends the way
+  the swipe hooks at the end.
+- **Where you start on the ball** → height and spin: start near the **top** for a low, driven, dipping shot (top
+  spin), the **centre** for a normal lift, near the **bottom** for a high shot with back spin — enough to clear the
+  wall.
+- Very short swipes, backwards swipes and swipes far off the goal direction are ignored.
 
-**Both schemes:** power above 90 % adds random aim scatter (more at 100 %). In penalties and long shots, a strike
-within ±80 ms of the ideal contact keeps full power; outside that window you lose up to 25 % power and gain scatter.
+**Dial — "reticle, power, knobs"** (default with a mouse). Every value is shown as a number and can be repeated
+exactly.
+
+- **Reticle:** drag it, or tap anywhere in the play area, to aim anywhere on the goal face — or wide/over (up to
+  12 m either side and 6 m high).
+- **Power bar:** hold it and it fills and empties (1.6 s cycle); release to set the power. A quick tap sets the
+  tapped value exactly.
+- **Curve** knob (−10…+10 rev/s side spin) and **Dip** knob (−6…+6 rev/s: top spin dips, back spin floats): drag
+  up/right to increase, steps of 0.5; double-click resets.
+- **Shoot:** press to strike (free kick). In penalty and long shot, **hold Shoot** to run up and **release** at the
+  ball; in long shot the first Shoot pushes the ball.
+- **Keyboard:** Space = Shoot (hold for the run-up); arrow keys move the reticle (Shift for 0.5 m steps) or change
+  a focused knob or the power bar.
 
 ### Settings
 
-Control scheme · Altitude (**Nairobi**, ~1,800 m, thinner air, less bend — the default — or sea level) · Sound ·
-Left/right-footed (mirrors the "inside/outside of the foot" labels) · Reset data.
+- **Controls:** Swipe or Dial.
+- **Altitude:** Nairobi, 1,800 m (thinner air: less bend, less drag — the default) or Sea level.
+- **Sound:** on/off.
+- **Kicking foot:** Right- or Left-footed. Mirrors the HUD layout and Talilei's side of the ball, and swaps the
+  "inside/outside of the foot" labels (the physics is the same).
+- **Reset data:** deletes all kick stats and best-kick ghosts (asks for confirmation).
 
-The game is landscape only; on a phone held upright it shows a rotate prompt.
+The game is landscape only; held upright it shows a rotate prompt. On a touch device it goes full screen and locks
+landscape on the first tap where the browser allows it.
 
 ## Run locally
 
@@ -96,8 +119,9 @@ The workflow [`.github/workflows/pages.yml`](.github/workflows/pages.yml) builds
 
    **`https://<user>.github.io/<repo>/`**
 
-The separate CI workflow (`ci.yml`) runs lint, unit tests, E2E on Chromium/WebKit/Firefox and the build on every
-push and pull request.
+The deploy workflow runs `npm run lint` and `npm test` before building, so a red tree never deploys. The separate
+CI workflow (`ci.yml`) runs on every push and pull request: a fast job (lint, unit tests, build, static check) and
+one E2E job per Playwright project (chromium, tablet-android, webkit, ipad, firefox) in parallel.
 
 ## Install on a tablet
 
@@ -106,7 +130,11 @@ device, so it then starts and plays **with no internet connection**.
 
 **Android tablet or phone (Chrome):** open `https://<user>.github.io/<repo>/`, wait for the title screen, then tap
 **⋮ → Install app** (or **Add to Home screen**). Launch LT26 from the home screen: it opens full screen in
-landscape. To update, open it while online; the new version is used the next time the app is started.
+landscape.
+
+**Updates.** When the app is opened while online it checks for a new version and downloads it in the background.
+The new version applies only after **all LT26 windows and tabs are closed and the app is opened again** (on
+Android, swipe LT26 away in the recent-apps view, then relaunch). A game in progress is never switched mid-session.
 
 **iPad / iPhone (Safari):** open the same URL, tap **Share → Add to Home Screen**, then launch it from the home
 screen.

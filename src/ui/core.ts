@@ -52,6 +52,8 @@ export interface Core {
   /** Push an intent to the debug hook and the sim (adds the penalty disguise flag). */
   emitIntent(intent: KickIntent): void;
   startRunUp(): void;
+  /** Abort a run-up that ended without a strike. */
+  cancelRunUp(): void;
   preview(p: InputPreview | null): void;
   /** Next kick at the same spot. */
   nextShot(): void;
@@ -62,6 +64,12 @@ export interface Core {
     runUp: RunUpInfo | null;
     lastIntent: KickIntent | null;
     lastTimingErrMs: number | null;
+    /** Side spin (rev/s) of the last strike's launch, for the inside/outside-of-the-foot label. */
+    lastSideSpin: number | null;
+    /** Best kick at this spot from BEFORE the last shot was recorded (replay/result ghost). */
+    resultGhost: Vec3[] | null;
+    /** A kick gesture (swipe / Shoot hold) is in progress: menus, tabs and spots ignore presses. */
+    gesture: boolean;
     pendingCard: ShotSummary | null;
     swipePath: { x: number; y: number }[] | null;
     aimPreview: Vec3[] | null;
