@@ -1,0 +1,13 @@
+/* STUB (Phase 0) — replaced by the input & UI engineer. Brand palette only. */
+:root {
+  --sky: #3fc9fc;
+  --navy: #000e29;
+  --white: #ffffff;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--navy);
+  color: var(--white);
+}

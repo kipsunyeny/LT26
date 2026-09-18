@@ -1,0 +1,9 @@
+dist
+node_modules
+concept
+test-results
+playwright-report
+package-lock.json
+*.md
+public/sw.js
+tests/e2e/**/*-snapshots

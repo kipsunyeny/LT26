@@ -1,0 +1,39 @@
+{
+  "name": "lt26",
+  "private": true,
+  "version": "0.0.0",
+  "description": "LT26 (Luther Talilei 26) — realistic football shooting trainer (Three.js + own ball physics)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . && prettier --check . && node scripts/no-todo.mjs",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "assets": "node scripts/make-assets.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "three": "0.186.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.56.1",
+    "@types/node": "22.20.3",
+    "@types/three": "0.186.0",
+    "eslint": "10.10.0",
+    "globals": "17.12.0",
+    "jsdom": "30.1.0",
+    "prettier": "3.9.8",
+    "sharp": "0.35.4",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.0",
+    "vite": "8.3.0",
+    "vitest": "5.0.1"
+  }
+}
