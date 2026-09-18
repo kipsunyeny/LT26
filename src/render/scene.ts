@@ -2,21 +2,10 @@
 import * as THREE from 'three';
 import type { CameraMode, Mode, SceneApi, SceneStats, Vec3, WorldSnapshot } from '../contracts';
 import { BallView, BALL_RADIUS } from './ball';
-import {
-  KickAnchorTracker,
-  kickBallNdcY,
-  kickCameraPose,
-  newPose,
-  pathBounds,
-  replayCameraPose,
-  titleCameraPose,
-  type CameraPose,
-  type PathBounds,
-} from './cameras';
 import { makeCanvas } from './geom';
 import { createGoals } from './goal';
 import { TalileiView } from './mascot';
-import { projectToScreen, screenToPlaneZ0, sphereScreenRadius } from './projection';
+import { CameraRig } from './rig';
 import { createPitch } from './pitch';
 import { KeeperView, OutfieldView } from './players';
 import { createStadium, SKY_HORIZON } from './stadium';
@@ -166,16 +155,8 @@ export function createScene(canvas: HTMLCanvasElement, opts: CreateSceneOptions 
   ];
   scene.add(...dynamic);
 
-  const camera = new THREE.PerspectiveCamera(46, 16 / 10, 0.2, 900);
-  let cssW = 1;
-  let cssH = 1;
-
-  let camMode: CameraMode = 'kick';
-  const tracker = new KickAnchorTracker();
-  const pose = newPose();
-  let replayTime = 0;
-  let titleTime = 0;
-  let bounds: PathBounds | null = null;
+  const rig = new CameraRig();
+  const camera = rig.camera;
   let prevT: number | null = null;
   let lost = false;
   let lastFrameAt = 0;
@@ -192,29 +173,8 @@ export function createScene(canvas: HTMLCanvasElement, opts: CreateSceneOptions 
   canvas.addEventListener('webglcontextlost', onLost, false);
   canvas.addEventListener('webglcontextrestored', onRestored, false);
 
-  function applyPose(p: CameraPose): void {
-    camera.position.set(p.position.x, p.position.y, p.position.z);
-    camera.lookAt(p.target.x, p.target.y, p.target.z);
-    if (camera.fov !== p.fov) {
-      camera.fov = p.fov;
-      camera.updateProjectionMatrix();
-    }
-    camera.updateMatrixWorld();
-  }
-
   function updateCamera(world: WorldSnapshot, clockDt: number, dt: number): void {
-    const aspect = cssW / Math.max(1, cssH);
-    if (camMode === 'kick') {
-      tracker.update(world.ball.p, world.taker.p, clockDt);
-      applyPose(kickCameraPose(tracker.anchor, tracker.side, kickBallNdcY(cssH), pose));
-    } else if (camMode === 'replay') {
-      replayTime += dt;
-      if (!bounds) bounds = pathBounds([], world.ball.p);
-      applyPose(replayCameraPose(bounds, replayTime, aspect, pose));
-    } else {
-      titleTime += dt;
-      applyPose(titleCameraPose(titleTime, pose));
-    }
+    rig.frame(world, clockDt, dt);
     const e = camera.position;
     trail.setEye(e.x, e.y, e.z);
     ghost.setEye(e.x, e.y, e.z);
@@ -234,7 +194,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: CreateSceneOptions 
       shadows.add(w.p.x, w.p.z, 0.75 * s, 0.5 * s);
     }
     if (world.defender) shadows.add(world.defender.p.x, world.defender.p.z, 0.75, 0.5);
-    if (camMode !== 'title') shadows.add(world.taker.p.x, world.taker.p.z, 0.8, 0.5);
+    if (rig.mode !== 'title') shadows.add(world.taker.p.x, world.taker.p.z, 0.8, 0.5);
     shadows.end();
   }
 
@@ -242,17 +202,13 @@ export function createScene(canvas: HTMLCanvasElement, opts: CreateSceneOptions 
     ready: talilei.ready,
 
     setMode(_mode: Mode): void {
-      tracker.requestSnap();
-      replayTime = 0;
+      rig.setMode();
       prevT = null;
     },
 
     setCamera(mode: CameraMode): void {
-      if (mode === camMode) return;
-      camMode = mode;
-      if (mode === 'kick') tracker.requestSnap();
-      if (mode === 'replay') replayTime = 0;
-      if (mode === 'title') titleTime = 0;
+      if (mode === rig.mode) return;
+      rig.setCamera(mode);
       prevT = null;
     },
 
@@ -273,11 +229,11 @@ export function createScene(canvas: HTMLCanvasElement, opts: CreateSceneOptions 
       updateCamera(world, dT > 0 ? dT : dt, dt);
       ball.update(b, world.ball.w, spinDt);
       keeper.update(world.keeper);
-      outfield.update(world.wall, world.defender, tracker.valid ? tracker.anchor : b);
-      talilei.update(world.taker.p, world.taker.stride, camera.position, camMode !== 'title');
+      outfield.update(world.wall, world.defender, rig.anchor ?? b);
+      talilei.update(world.taker.p, world.taker.stride, camera.position, rig.mode !== 'title');
       if (!dynamicVisible) talilei.mesh.visible = false;
       // Lines belong to play/replay only; the title backdrop stays clean.
-      const showLines = dynamicVisible && camMode !== 'title';
+      const showLines = dynamicVisible && rig.mode !== 'title';
       trail.mesh.visible = showLines && trail.indexCount > 0;
       ghost.mesh.visible = showLines && ghost.indexCount > 0;
       aim.mesh.visible = showLines && aim.indexCount > 0;
@@ -291,7 +247,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: CreateSceneOptions 
 
     setTrail(points: Vec3[] | null, ghostPts?: Vec3[] | null): void {
       const changed = trail.set(points);
-      if (changed !== 'unchanged') bounds = points && points.length > 0 ? pathBounds(points, points[0]) : null;
+      if (changed !== 'unchanged') rig.setPath(points);
       if (ghostPts !== undefined) ghost.set(ghostPts);
       if (!dynamicVisible) {
         trail.mesh.visible = false;
@@ -305,25 +261,24 @@ export function createScene(canvas: HTMLCanvasElement, opts: CreateSceneOptions 
     },
 
     worldToScreen(p: Vec3): { x: number; y: number; visible: boolean } {
-      return projectToScreen(camera, p, cssW, cssH);
+      return rig.worldToScreen(p);
     },
 
     screenToGoalPlane(sx: number, sy: number): { x: number; y: number } | null {
-      return screenToPlaneZ0(camera, sx, sy, cssW, cssH);
+      return rig.screenToGoalPlane(sx, sy);
     },
 
     ballScreenRadius(): number {
-      return sphereScreenRadius(camera, ball.mesh.position, BALL_RADIUS, cssW, cssH);
+      return rig.ballScreenRadius(ball.mesh.position, BALL_RADIUS);
     },
 
     resize(width: number, height: number, pixelRatio: number): void {
-      cssW = Math.max(1, Math.round(width));
-      cssH = Math.max(1, Math.round(height));
+      rig.setSize(width, height);
+      const cssW = rig.width;
+      const cssH = rig.height;
       const pr = Number.isFinite(pixelRatio) && pixelRatio > 0 ? pixelRatio : 1;
       renderer.setPixelRatio(Math.min(pr, MAX_PIXEL_RATIO));
       renderer.setSize(cssW, cssH, false);
-      camera.aspect = cssW / cssH;
-      camera.updateProjectionMatrix();
     },
 
     getStats(): SceneStats {

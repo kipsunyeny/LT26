@@ -73,3 +73,59 @@ describe('free kicks: a repeatable curling goal exists from every preset spot', 
     }, 60000);
   }
 });
+
+describe('long shot outcome distribution (push 0.5, 94 km/h, perfect timing, no spin)', () => {
+  function longShots(xs: number[], ys: number[], pushPower = 0.5) {
+    const { sim, events } = newSim(1);
+    sim.setMode('longShot');
+    const tally: Record<string, number> = {};
+    const defDist: number[] = [];
+    for (const spot of ['ls-centre', 'ls-left', 'ls-right'])
+      for (const x of xs)
+        for (const y of ys) {
+          sim.setSpot(spot);
+          sim.resetShot();
+          events.length = 0;
+          const b = sim.state.ball.p;
+          sim.applyIntent({
+            kind: 'push',
+            scheme: 'swipe',
+            aim: { kind: 'angles', azimuth: Math.atan2(-b.x, b.z), elevation: 0 },
+            power: pushPower,
+            sideSpin: 0,
+            topSpin: 0,
+            atMs: sim.state.time * 1000,
+          });
+          const c = sim.startRunUp();
+          while (sim.state.time < c - 1e-9) sim.update(1 / 240);
+          const d = sim.state.world.defender?.p;
+          const p = sim.state.ball.p;
+          if (d) defDist.push(Math.hypot(d.x - p.x, d.z - p.z));
+          sim.applyIntent(strike({ kind: 'target', x, y }, 0.8, 0, 0, sim.state.time * 1000));
+          runToResult(sim);
+          const r = sim.state.lastShot?.result ?? 'none';
+          tally[r] = (tally[r] ?? 0) + 1;
+        }
+    return { tally, defDist };
+  }
+
+  it('corner areas (x ±3.0/±3.3, y 0.3/2.1) score at least 1 in 4 (QA D-3 grid)', () => {
+    const { tally, defDist } = longShots([-3.3, -3.0, 3.0, 3.3], [0.3, 2.1]);
+    console.log(
+      `[outcomes] long-shot corners: ${JSON.stringify(tally)}; defender at strike ${Math.min(...defDist).toFixed(1)}–${Math.max(...defDist).toFixed(1)} m`,
+    );
+    expect(tally.goal ?? 0).toBeGreaterThanOrEqual(6);
+    expect(tally.goal ?? 0).toBeLessThan(24);
+    for (const d of defDist) {
+      expect(d).toBeGreaterThanOrEqual(3.5);
+      expect(d).toBeLessThanOrEqual(6.5);
+    }
+  });
+
+  it('central shots are saved or blocked', () => {
+    const { tally } = longShots([-1.5, 0, 1.5], [0.5, 1.2]);
+    console.log(`[outcomes] long-shot central: ${JSON.stringify(tally)}`);
+    expect(tally.goal ?? 0).toBeLessThanOrEqual(3);
+    expect(tally.wall ?? 0).toBeGreaterThan(0);
+  });
+});

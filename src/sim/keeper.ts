@@ -34,6 +34,8 @@ export const KEEPER = {
   shuffle: { a: 8, v: 3, brake: 20 },
   /** The keeper side-steps only to keep the target this far inside his lateral reach, m. */
   shuffleMargin: 0.3,
+  /** Side-steps stop once the ball is this close in time: from then on it is the dive alone, s. */
+  diveCommit: 0.55,
   /** A contact slower than this is caught (60 km/h). */
   catchSpeed: 60 / 3.6,
   handRestitution: 0.45,
@@ -96,7 +98,8 @@ export interface KeeperPlan {
 
 /** Predicted ball path: where it crosses the keeper plane and the goal line (either may be null). */
 export interface Prediction {
-  plane: { x: number; y: number } | null;
+  /** Crossing of the keeper's plane; t = seconds from now until it. */
+  plane: { x: number; y: number; t: number } | null;
   line: { x: number; y: number } | null;
 }
 
@@ -135,6 +138,7 @@ export class Keeper {
   private target: { x: number; y: number } | null = null;
   private dived = false;
   private want: number | null = null;
+  private arrive = 0;
   private sinceReplan = Infinity;
 
   constructor(
@@ -207,6 +211,7 @@ export class Keeper {
           const p = predict();
           this.target = this.decide(p);
           this.want = p.plane ? this.target.x : null;
+          this.arrive = p.plane ? p.plane.t : 0;
           if (!this.dived) {
             this.dived = true;
             const t = this.clampHand(this.target);
@@ -215,7 +220,8 @@ export class Keeper {
           }
         }
         if (this.target) hand = this.clampHand(this.target);
-        if (this.want !== null) {
+        this.arrive -= dt;
+        if (this.want !== null && this.arrive > KEEPER.diveCommit) {
           const need = this.want - this.base;
           const lim = lateralReachAt(this.target ? this.target.y : KEEPER.envCentreY) - KEEPER.shuffleMargin;
           if (Math.abs(need) > lim) baseTarget = this.want - Math.sign(need) * lim;

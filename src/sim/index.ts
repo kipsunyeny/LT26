@@ -212,7 +212,7 @@ export function createSim(opts: CreateSimOptions): Sim {
       const n = stepBall(s, DT, e, ZERO_NOISE).state;
       if (!out.plane && s.p.z >= kz && n.p.z < kz) {
         const u = (s.p.z - kz) / (s.p.z - n.p.z);
-        out.plane = { x: s.p.x + (n.p.x - s.p.x) * u, y: s.p.y + (n.p.y - s.p.y) * u };
+        out.plane = { x: s.p.x + (n.p.x - s.p.x) * u, y: s.p.y + (n.p.y - s.p.y) * u, t: s.t - t0 + DT * u };
       }
       if (s.p.z >= 0 && n.p.z < 0) {
         const u = s.p.z / (s.p.z - n.p.z);
@@ -223,7 +223,7 @@ export function createSim(opts: CreateSimOptions): Sim {
       s = n;
     }
     if (!out.plane && state.ball.p.z < kz + 0.4 && state.ball.p.z > 0) {
-      out.plane = { x: state.ball.p.x, y: state.ball.p.y };
+      out.plane = { x: state.ball.p.x, y: state.ball.p.y, t: 0 };
     }
     return out;
   }

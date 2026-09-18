@@ -1,7 +1,6 @@
 // Long shot: push, taker chasing the rolling ball, closing defender.
 import type { Collider, Vec3 } from '../contracts';
 import { bisectorX } from './freeKick';
-import { DEFENDER_HEIGHT, DEFENDER_RADIUS } from './wall';
 import { clamp, flatDir, len, rightOf, sub, v3 } from './vec';
 
 export const LS_KEEPER_Z = 0.6;
@@ -14,10 +13,15 @@ export const TAKER_RUN = { a: 6, v: 7.5, brake: 8, reach: 0.15 } as const;
 export const DEFENDER = {
   speed: 6,
   a: 8,
-  startAhead: 10,
-  startSide: 1.0,
-  reaction: 0.25,
-  stopDistance: 2.4,
+  /** Starts 12 m in front of the ball on the ball→goal-centre line: he closes down the direct line. */
+  startAhead: 12,
+  startSide: 0,
+  reaction: 0.3,
+  /** Holds this far from the ball (a closing defender blocks, he does not dive in), m. */
+  stopDistance: 3.5,
+  /** Arms down, standing: capsule radius and height, m. */
+  radius: 0.25,
+  height: 1.8,
   restitution: 0.3,
 } as const;
 
@@ -88,16 +92,16 @@ export function defenderStart(ball: Vec3): Vec3 {
   );
 }
 
-/** Defender closes on the ball at up to 6 m/s and holds (to block) at 2.4 m. */
+/** Defender closes on the ball at up to 6 m/s and holds (to block) at 3.5 m. */
 export function defenderStep(d: Mover, ball: Vec3, ballVel: Vec3, tSincePush: number, dt: number): Mover {
   if (tSincePush < DEFENDER.reaction) return d;
   const off = v3(ball.x - d.p.x, 0, ball.z - d.p.z);
   const dist = len(off);
   const gap = dist - DEFENDER.stopDistance;
-  // Closes at up to 6 m/s, then holds a 2.4 m blocking distance (backing off if the ball rolls at him).
+  // Closes at up to 6 m/s, then holds the blocking distance (backing off if the ball rolls at him).
   const sp = Math.sign(gap) * Math.min(DEFENDER.speed, Math.sqrt(2 * 20 * Math.abs(gap)));
   const dir = dist > 1e-9 ? v3(off.x / dist, 0, off.z / dist) : v3(0, 0, 0);
-  // Relative to the ball: he matches its approach, so the gap closes at ≤ 6 m/s and settles at 2.4 m.
+  // Relative to the ball: he matches its approach, so the gap closes at ≤ 6 m/s and settles at stopDistance.
   const approach = Math.min(0, ballVel.x * dir.x + ballVel.z * dir.z);
   const vdes = v3(dir.x * (sp + approach), 0, dir.z * (sp + approach));
   const l = len(vdes);
@@ -109,9 +113,9 @@ export function defenderCollider(d: Mover): Collider {
   return {
     kind: 'capsule',
     tag: 'defender',
-    a: v3(d.p.x, DEFENDER_RADIUS, d.p.z),
-    b: v3(d.p.x, DEFENDER_HEIGHT - DEFENDER_RADIUS, d.p.z),
-    radius: DEFENDER_RADIUS,
+    a: v3(d.p.x, DEFENDER.radius, d.p.z),
+    b: v3(d.p.x, DEFENDER.height - DEFENDER.radius, d.p.z),
+    radius: DEFENDER.radius,
     restitution: DEFENDER.restitution,
     velocity: v3(d.v.x, 0, d.v.z),
   };

@@ -84,7 +84,7 @@ describe('long shot', () => {
     sim.setMode('longShot');
     expect(sim.state.spotKey).toBe('ls-centre');
     const d0 = sim.state.world.defender?.p;
-    expect(d0 && d0.z).toBeCloseTo(26 - 10, 0);
+    expect(d0 && d0.z).toBeCloseTo(26 - 12, 0);
     sim.applyIntent({
       kind: 'push',
       scheme: 'swipe',

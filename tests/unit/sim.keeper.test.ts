@@ -15,7 +15,7 @@ import { penalty, runToResult } from './sim.helpers';
 const DT = 1 / 240;
 const fixed =
   (x: number, y: number): (() => Prediction) =>
-  () => ({ plane: { x, y }, line: { x, y } });
+  () => ({ plane: { x, y, t: 0.3 }, line: { x, y } });
 
 function drive(k: Keeper, x: number, y: number, seconds: number, reaction = 0.2) {
   k.strike({ reaction, guessSide: 0 });
