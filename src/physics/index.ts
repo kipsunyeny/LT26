@@ -1,6 +1,15 @@
-// STUB (Phase 0) — replaced by the physics engineer. Public API is fixed by docs/ARCHITECTURE.md.
-import type { LaunchParams, PhysicsEnv, SimulateOptions, Trajectory } from '../contracts';
-
-export function simulate(_launch: LaunchParams, _env: PhysicsEnv, _opts: SimulateOptions = {}): Trajectory {
-  return { samples: [], contacts: [], lineCrossing: null };
-}
+// LT26 physics — public entry points (docs/ARCHITECTURE.md §3). Pure, deterministic, no Three.js, no DOM.
+export * from './constants';
+export {
+  acceleration,
+  dragCoefficient,
+  launchState,
+  liftCoefficient,
+  simulate,
+  spinVector,
+  stepBall,
+  type PhysicsSimulateOptions,
+} from './ball';
+export { collideCollider, collideGround, goalFrameColliders, type CollisionResult } from './collisions';
+export { createKnuckleNoise, gaussian, mulberry32, type KnuckleNoise } from './rng';
+export { solveLaunch } from './solver';
