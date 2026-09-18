@@ -18,8 +18,11 @@ for (const [src, out, size] of jobs) {
 // PWA icons from the logo. "any" icons keep transparency; maskable ones sit on navy with 12% padding.
 mkdirSync('public/icons', { recursive: true });
 for (const s of [192, 512]) {
-  await sharp('LT26-logo.png').resize(s, s).png().toFile(`public/icons/icon-${s}.png`);
-  const inner = Math.round(s * 0.76);
+  await sharp('LT26-logo.png')
+    .resize(s, s)
+    .png({ palette: true, quality: 90, compressionLevel: 9 })
+    .toFile(`public/icons/icon-${s}.png`);
+  const inner = Math.round(s * 0.72);
   const logo = await sharp('LT26-logo.png').resize(inner, inner).png().toBuffer();
   await sharp({ create: { width: s, height: s, channels: 4, background: '#000E29' } })
     .composite([{ input: logo, gravity: 'center' }])

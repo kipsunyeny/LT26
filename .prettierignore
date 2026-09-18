@@ -5,5 +5,5 @@ test-results
 playwright-report
 package-lock.json
 *.md
-public/sw.js
+dist-*
 tests/e2e/**/*-snapshots
