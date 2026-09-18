@@ -6,3 +6,6 @@ blob-report
 .vite
 *.log
 .DS_Store
+Claude outputs/
+concept/
+dist-*/

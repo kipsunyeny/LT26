@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 4173;
+// PW_PORT / PW_OUT let several agents run E2E concurrently without sharing a server or a dist folder.
+const PORT = Number(process.env.PW_PORT ?? 4173);
+const OUT = process.env.PW_OUT ?? 'dist';
 const chromiumGl = { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] };
 
 // E2E runs against the production build served by `vite preview`.
@@ -17,7 +19,7 @@ export default defineConfig({
     viewport: { width: 1280, height: 800 },
   },
   webServer: {
-    command: `npm run build && npx vite preview --port ${PORT} --strictPort`,
+    command: `npx vite build --outDir ${OUT} --emptyOutDir && npx vite preview --outDir ${OUT} --port ${PORT} --strictPort`,
     port: PORT,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
