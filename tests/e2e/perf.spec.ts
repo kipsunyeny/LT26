@@ -5,6 +5,10 @@ import { expect, test } from '@playwright/test';
 import { openMode, seedSettings, stableBall, watchErrors } from './helpers/qa';
 
 test.beforeEach(() => test.slow());
+// Geometry (draw calls, triangles) does not depend on the pixel ratio. At the tablet profile's DPR 2.25,
+// 300 back-to-back SwiftShader frames wedged headless Chromium's teardown so the next test's context never
+// opened; rendering this spec at DPR 1 keeps the gate identical and the suite stable.
+test.use({ deviceScaleFactor: 1 });
 
 interface PerfRun {
   frames: number;
