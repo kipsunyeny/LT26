@@ -37,9 +37,9 @@ allowlist. Only the pre-installed Chromium build is available, so the `webkit`, 
 projects cannot be run locally.
 
 **What is done.** All E2E specs run here on the `chromium` and `tablet-android` (Chromium with touch) projects. The
-CI workflow (`.github/workflows/ci.yml`) runs `npx playwright install --with-deps chromium webkit firefox` and then
-the full `npm run e2e`, so WebKit and Firefox results come from the first CI run on GitHub (which itself depends on
-B-1).
+CI workflow (`.github/workflows/ci.yml`) runs one E2E job per Playwright project, each installing its own browser
+with `npx playwright install --with-deps`, so WebKit, iPad and Firefox results come from the first CI run on GitHub
+(which itself depends on B-1).
 
-**What the owner does.** After pushing (B-1), open **Actions → CI** and check the E2E step; failures upload the
-`playwright-results` artifact. Record the WebKit/Firefox results in [TESTING.md](TESTING.md).
+**What the owner does.** After pushing (B-1), open **Actions → CI** and check the `e2e (webkit)`, `e2e (ipad)` and `e2e (firefox)` jobs;
+failures upload a `playwright-results-<project>` artifact. Record the WebKit/Firefox results in [TESTING.md](TESTING.md).

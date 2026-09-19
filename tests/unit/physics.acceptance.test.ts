@@ -118,7 +118,7 @@ describe('§4 acceptance targets', () => {
 
   it('wall clearance: 15° from 22 m at 95 km/h is ≥ 2.3 m high at 9.15 m from the kick', () => {
     // The row does not state a spin. Without spin it is impossible under §4 (see the next test and
-    // docs/decisions/physics.md): the kick is the lofted, bottom-of-the-ball strike of §3, i.e. back spin,
+    // docs/DECISIONS.md, D-19 and "Physics engineer"): the kick is the lofted, bottom-of-the-ball strike of §3, i.e. back spin,
     // taken at 10 rev/s — the brief's largest spin magnitude. Launch speed, angle, distance and bound unchanged.
     const l = kick(22, 95, 15, 0, -10);
     const tr = simulate(l, SEA, { stopAtGoalLine: true, ground: false });

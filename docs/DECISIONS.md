@@ -36,7 +36,9 @@ Every choice made instead of asking the owner. Newest at the bottom of each phas
 
 ## Agent decision logs (merged verbatim)
 
-### physics
+Each specialist logged the decisions it made instead of asking; merged here at v0.1.0.
+
+### Physics engineer
 
 - **Integrator: classical RK4 on (p, v) at 240 Hz, with ω decayed exactly (ω₀e^(−t/τ)) inside the step.** §4 allows semi-implicit Euler or RK4; semi-implicit Euler has ≈2 cm error after 1 s, while RK4 is exact for constant acceleration. The energy row measures 3.2e-13 m.
 - **Contacts are resolved after the flight step (colliders in list order, swept, then the ground).** This keeps the flight integrator smooth and puts one contact model in one place.
@@ -53,7 +55,7 @@ Every choice made instead of asking the owner. Newest at the bottom of each phas
 - **Solver: free flight, Newton + Broyden on (azimuth, elevation) from the vacuum low-trajectory guess, 5 mm tolerance; returns null if not converged or if target.y < r.** Free flight keeps the residual smooth: trial steps that would bounce made the ground-on residual flat. A direct flight to a centre height ≥ r cannot touch the ground before the line, so the solved launch is also correct with the ground on (the tests verify it that way).
 - **`collideGround(s, dt, g)` and `collideCollider(prev, s, collider, index, dt)` signatures.** ARCHITECTURE §3 leaves them as `(...)`. Both return `{ state, contact | null }`.
 
-### render
+### Rendering engineer
 
 - **Talilei's drawn ball is erased at load time.** The brand art has a ball between his feet; a canvas `destination-out` pass (traced leg edge + circle, `processTalileiImage`) removes it so only the real 3D ball shows. The source asset is untouched.
 - **Talilei is hidden under the title camera, and so are trails/ghost/aim.** The title UI shows its own 2D Talilei over a dimmed backdrop; a second 3D one would duplicate him.
@@ -78,7 +80,7 @@ Every choice made instead of asking the owner. Newest at the bottom of each phas
 - **No `tests/e2e/render.spec.ts`.** The E2E suite runs against the production build, which doesn't include the harness; the harness is checked with `tests/harness/shoot.mjs` instead, as briefed.
 - **Screen queries never lag a camera change (`CameraRig`).** After a frame, `worldToScreen`/`screenToGoalPlane`/`ballScreenRadius` use exactly the camera that frame was drawn with. Between `setMode`/`setCamera` and the next `render()` (the first play frame can take seconds under SwiftShader), they use the pose the next frame will use: title/replay poses immediately, and for the kick camera a provisional anchor at the queried resting ball (y 0.05–0.25, z > 5), else the kept kick spot. Before, the title projection leaked into the HUD's ball hit zone.
 
-### sim
+### Gameplay/sim engineer
 
 - **Preset spots.** `fk-centre` (0, 22), `fk-left-d`/`fk-right-d` (∓6, 18.5) just outside the box at the edges of the D, `fk-wide-left`/`fk-wide-right` (∓15, 18.5); `pk-spot` (0, 11); `ls-centre` (0, 26), `ls-left`/`ls-right` (∓9, 25). All free kicks are 16–35 m from the goal centre and outside the penalty area.
 - **Free placement snaps to whole metres and stays outside the penalty area.** The key `fk-x{X}-z{Z}` then names exactly one ball position. A request inside the box moves to the nearest valid point, because a direct free kick cannot be taken inside it. `setSpot('fk-x3-z25')` is accepted too.
@@ -106,7 +108,7 @@ Every choice made instead of asking the owner. Newest at the bottom of each phas
 - **Taker:** stands 0.6 m left of and 0.5 m behind the ball relative to the ball→goal-centre direction (mirrored for left-footers). The penalty run-up starts 1.3 m left and 2.2 m back (≈2.55 m) with a smoothstep over 0.9 s.
 - **Session log best kick:** goals beat non-goals. Among goals, the smallest distance from the crossing to any of the four inner corners of the mouth wins; among non-goals, the smallest miss. Stored paths are rounded to mm. Invalid entries in storage are dropped individually.
 
-### ui
+### Input & UI engineer
 
 - **Finger speed is measured over the last 80 ms before release,** not over the whole swipe. A flick is judged by its release speed; a slow wind-up followed by a fast flick is a fast kick. A lift-off with no movement is ignored so it does not dilute the speed.
 - **CSS px → metres: 96 CSS px per inch for fine pointers (mouse), 150 CSS px per inch on coarse pointers (`(pointer: coarse)`, touch tablets/phones lay out ≈132–160 CSS px per physical inch).** Fix round: with 96 on tablets a physical flick read ~1.5× too fast. Chosen once per scheme attach.
@@ -147,7 +149,7 @@ Every choice made instead of asking the owner. Newest at the bottom of each phas
 - **HUD state is synced once at mount and on tab/spot clicks, not only in the animation loop,** so the HUD is complete even when frames are slow (headless SwiftShader measured ~2.7 fps at 1280×800 and <0.5 fps on the DPR-2.25 tablet profile).
 - **Input E2E tests wait for the ball's projected position to be stable and on screen before swiping, and use `test.slow()`.** The kick camera is only placed by `scene.render`, so projections are off-screen for the first frames after entering a mode; at sub-1 fps every CDP touch event also waits for a frame.
 
-### release
+### Docs & release engineer
 
 - **Service worker generated by an own Vite plugin (`scripts/sw-plugin.ts`) instead of vite-plugin-pwa or `scripts/build-sw.mjs`.** No new dependency; running inside `vite build` (`closeBundle`, post) means every build — `npm run build`, the E2E `webServer` build, `--outDir` variants — gets a matching worker with no extra step. The static `public/sw.js` placeholder was deleted so it can never overwrite the generated one. (ARCHITECTURE.md §3 still names `scripts/build-sw.mjs`; it should say `scripts/sw-plugin.ts`.)
 - **Precache list = every file in the output folder after the build, minus `sw.js` and `*.map`.** Walking the folder (rather than Rollup's bundle) includes the copied `public/` files (manifest, icons) with no allow-list to keep in sync.
@@ -169,7 +171,7 @@ Every choice made instead of asking the owner. Newest at the bottom of each phas
 - **WebKit, iPad and Firefox jobs pass `--grep-invert visual\.spec\.ts`.** The visual tests are not tagged `@visual`, but Playwright's grep matches against the title path including the file name, so this excludes exactly visual.spec.ts (verified with `--list`). Baselines exist only for chromium and tablet-android on Linux.
 - **Pages workflow runs `npm run lint` and `npm test` before the build** so a red tree never deploys, without repeating the slow E2E suite (CI covers that on the same push).
 
-### qa
+### QA engineer
 
 - **Integration tests fly the ball on the sim clock after the real gesture.** The swipe / dial / mouse gesture is real (CDP touch events, mouse), but once the `kick` event is seen the test advances `__lt26.sim.update(0.1)` from `page.evaluate` until `result`. Headless SwiftShader runs at a few fps (below 1 fps on the tablet profile) and the frame loop clamps dt to 0.1 s, so waiting on rAF would cost minutes per kick; the fixed 240 Hz sub-stepping makes the outcome independent of how the time is batched.
 - **Penalty / long-shot strikes are released just before the ideal contact.** After the press (run-up) or the push, the test advances the sim to 60–100 ms before `runUpStart.contactAt` and then swipes; the exact timing error is whatever the page measured and is shown on the card, not asserted.

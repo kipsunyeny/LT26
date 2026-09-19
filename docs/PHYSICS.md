@@ -104,7 +104,7 @@ Setup for every row:
 | Nairobi vs sea, FK 25 m / 100 km/h / 6° / 8 rev/s | 12–20 % less bend | 2.4957 → 2.0293 m = 18.69 % less | pass |
 | Energy ρ = 0, 1 s | ≤ 1 mm | 3.19 × 10⁻¹³ m | pass |
 
-Wall row: at 15° and 95 km/h even the vacuum parabola is 1.93 m high at 9.15 m, and drag only lowers it. The row cannot pass for any spinless ball. The row leaves spin unstated, so the test uses the lofted, bottom-of-ball strike of §3 with back spin at the brief's largest spin magnitude, 10 rev/s. The margin is thin (1.7 mm) but deterministic, because a spinning ball has no knuckle noise. Practical consequence: clearing a wall about 2.3 m high needs roughly 17–18° of elevation, or heavy back spin. See `docs/decisions/physics.md`.
+Wall row: at 15° and 95 km/h even the vacuum parabola is 1.93 m high at 9.15 m, and drag only lowers it. The row cannot pass for any spinless ball. The row leaves spin unstated, so the test uses the lofted, bottom-of-ball strike of §3 with back spin at the brief's largest spin magnitude, 10 rev/s. The margin is thin (1.7 mm) but deterministic, because a spinning ball has no knuckle noise. Practical consequence: clearing a wall about 2.3 m high needs roughly 17–18° of elevation, or heavy back spin. See [DECISIONS.md](DECISIONS.md) (D-19 and the physics engineer log).
 
 Other measured behaviour (`physics.collisions.test.ts`):
 - A 4 m/s roll stops in **9.915 m** (5.6 s).

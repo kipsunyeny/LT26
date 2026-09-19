@@ -1,7 +1,7 @@
 {
   "name": "lt26",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "LT26 (Luther Talilei 26) — realistic football shooting trainer (Three.js + own ball physics)",
   "type": "module",
   "scripts": {
